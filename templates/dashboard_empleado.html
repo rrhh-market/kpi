@@ -3,10 +3,10 @@
 {% block content %}
 <section class="hero">
   <h1>Hola, {{ current_user.nombre }} 👋</h1>
-  <p class="muted">Legajo {{ current_user.legajo }} · Sucursal {{ current_user.sucursal }}</p>
+  <p class="muted">Legajo <strong>{{ current_user.legajo }}</strong> · Sucursal <strong>{{ current_user.sucursal }}</strong> · {{ hoy.strftime('%A %d/%m/%Y') }}</p>
 </section>
 
-<h2 class="section-title">KPIs de hoy</h2>
+<h2 class="section-title">📅 KPIs de hoy</h2>
 <div class="grid grid-3">
   <div class="card kpi">
     <div class="kpi-label">Tickets emitidos</div>
@@ -22,7 +22,7 @@
   </div>
 </div>
 
-<h2 class="section-title">Acumulado del mes</h2>
+<h2 class="section-title">📈 Acumulado del mes</h2>
 <div class="grid grid-5">
   <div class="card kpi">
     <div class="kpi-label">Tickets</div>
@@ -53,7 +53,7 @@
 </div>
 {% endif %}
 
-<h2 class="section-title">Tickets por hora - hoy {{ hoy.strftime('%d/%m') }}</h2>
+<h2 class="section-title">⏰ Tickets por hora · hoy {{ hoy.strftime('%d/%m') }}</h2>
 <div class="card chart-card">
   <div class="bar-chart">
     {% for h in serie_horas %}
@@ -66,7 +66,7 @@
   </div>
 </div>
 
-<h2 class="section-title">Últimos 7 días</h2>
+<h2 class="section-title">📋 Últimos 7 días</h2>
 <div class="card">
   <table class="tabla">
     <thead>
@@ -87,7 +87,7 @@
   </table>
 </div>
 
-<h2 class="section-title">Tus insignias</h2>
+<h2 class="section-title">🏆 Tus insignias</h2>
 <div class="badges">
   {% for i in insignias %}
     <div class="badge" title="Otorgada el {{ i.fecha }}">

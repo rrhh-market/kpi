@@ -8,22 +8,23 @@
 </head>
 <body>
 {% if current_user.id %}
+{% set ruta = request.endpoint or '' %}
 <header class="topbar">
   <div class="brand">📊 KPIs Cajeros</div>
   <nav class="menu">
     {% if current_user.rol == 'admin' %}
-      <a href="{{ url_for('dashboard_admin') }}">Dashboard</a>
-      <a href="{{ url_for('cargar_kpis') }}">Cargar KPIs</a>
-      <a href="{{ url_for('admin_incidencias') }}">Incidencias</a>
-      <a href="{{ url_for('admin_empleados') }}">Empleados</a>
-      <a href="{{ url_for('admin_premios') }}">Premios</a>
+      <a href="{{ url_for('dashboard_admin') }}"    class="{% if ruta == 'dashboard_admin' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('cargar_kpis') }}"        class="{% if ruta in ('cargar_kpis','importar_csv','confirmar_csv','guardar_config') %}active{% endif %}">Cargar KPIs</a>
+      <a href="{{ url_for('admin_incidencias') }}"  class="{% if ruta == 'admin_incidencias' %}active{% endif %}">Incidencias</a>
+      <a href="{{ url_for('admin_empleados') }}"    class="{% if ruta == 'admin_empleados' %}active{% endif %}">Empleados</a>
+      <a href="{{ url_for('admin_premios') }}"      class="{% if ruta == 'admin_premios' %}active{% endif %}">Premios</a>
     {% else %}
-      <a href="{{ url_for('dashboard_empleado') }}">Mi Panel</a>
-      <a href="{{ url_for('incidencias_empleado') }}">Mis Incidencias</a>
+      <a href="{{ url_for('dashboard_empleado') }}"  class="{% if ruta == 'dashboard_empleado' %}active{% endif %}">Mi Panel</a>
+      <a href="{{ url_for('incidencias_empleado') }}" class="{% if ruta == 'incidencias_empleado' %}active{% endif %}">Mis Incidencias</a>
     {% endif %}
   </nav>
   <div class="user-info">
-    <span>{{ current_user.legajo }} - {{ current_user.nombre }} {{ current_user.apellido[:1] }}</span>
+    <span>{{ current_user.legajo }} · {{ current_user.nombre }} {{ current_user.apellido[:1] }}</span>
     <a class="btn-logout" href="{{ url_for('logout') }}">Salir</a>
   </div>
 </header>
@@ -42,6 +43,12 @@
 
   {% block content %}{% endblock %}
 </main>
+
+{% if current_user.id %}
+<footer class="footer">
+  Sistema de KPIs · RRHH Market
+</footer>
+{% endif %}
 
 <script src="{{ url_for('static', filename='main.js') }}"></script>
 {% block scripts %}{% endblock %}

@@ -16,7 +16,7 @@
   </select>
 </form>
 
-<h2 class="section-title">🏆 Top 3 del mes</h2>
+<h2 class="section-title">Top 3 del mes</h2>
 <div class="top3">
   {% set medallas = ['🥇', '🥈', '🥉'] %}
   {% for t in top3 %}
@@ -35,7 +35,7 @@
   {% endfor %}
 </div>
 
-<h2 class="section-title">Tickets por hora - hoy {{ hoy.strftime('%d/%m') }}{% if sucursal != 'Todas' %} · {{ sucursal }}{% endif %}</h2>
+<h2 class="section-title">⏰ Tickets por hora · hoy {{ hoy.strftime('%d/%m') }}{% if sucursal != 'Todas' %} · {{ sucursal }}{% endif %}</h2>
 <div class="card chart-card">
   <div class="bar-chart">
     {% for h in serie_horas %}
@@ -48,7 +48,7 @@
   </div>
 </div>
 
-<h2 class="section-title">Ranking completo</h2>
+<h2 class="section-title">📊 Ranking completo</h2>
 <div class="card">
   <table class="tabla sortable" id="tabla-ranking">
     <thead>

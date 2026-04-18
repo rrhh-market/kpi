@@ -3,15 +3,19 @@
 {% block content %}
 <div class="login-wrap">
   <div class="card login-card">
-    <h1 class="login-title">📊 KPIs Cajeros</h1>
-    <p class="muted">Iniciá sesión con tu legajo y contraseña.</p>
-    <form method="post" class="form">
-      <label>Legajo</label>
-      <input name="legajo" type="text" autofocus required>
-      <label>Contraseña</label>
-      <input name="password" type="password" required>
-      <button class="btn btn-primary" type="submit">Ingresar</button>
-    </form>
+    <div class="login-banner">
+      <h1 class="login-title">📊 KPIs Cajeros</h1>
+      <p>Accedé con tu legajo y contraseña</p>
+    </div>
+    <div class="login-body">
+      <form method="post" class="form">
+        <label>Legajo</label>
+        <input name="legajo" type="text" autofocus required>
+        <label>Contraseña</label>
+        <input name="password" type="password" required>
+        <button class="btn btn-primary" type="submit">Ingresar</button>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}
