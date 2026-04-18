@@ -1,20 +1,21 @@
 /* =========== Variables de color =========== */
+/* Paleta bicolor: azul + naranja */
 :root {
-  --color-primario: #1a237e;
-  --color-primario-claro: #303f9f;
-  --color-primario-oscuro: #0d144f;
-  --color-dorado: #f9a825;
-  --color-dorado-claro: #ffd95a;
-  --color-fondo: #f4f5fa;
+  --color-primario: #1565c0;        /* azul */
+  --color-primario-claro: #1e88e5;
+  --color-primario-oscuro: #0d47a1;
+  --color-dorado: #f57c00;          /* naranja (mantiene nombre por compatibilidad CSS) */
+  --color-dorado-claro: #ffb74d;
+  --color-fondo: #f4f7fb;
   --color-superficie: #ffffff;
-  --color-texto: #1e2033;
-  --color-texto-muted: #6a6e85;
-  --color-borde: #e3e5ee;
+  --color-texto: #1a2230;
+  --color-texto-muted: #6a7280;
+  --color-borde: #dce3ec;
   --color-exito: #2e7d32;
   --color-error: #c62828;
   --color-warning: #ef6c00;
-  --sombra-card: 0 2px 6px rgba(26, 35, 126, 0.08), 0 1px 2px rgba(0,0,0,0.04);
-  --sombra-card-hover: 0 6px 18px rgba(26, 35, 126, 0.15);
+  --sombra-card: 0 2px 6px rgba(21, 101, 192, 0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --sombra-card-hover: 0 6px 18px rgba(21, 101, 192, 0.18);
   --radio: 12px;
 }
 
@@ -103,7 +104,7 @@ a:hover { text-decoration: underline; }
   margin-bottom: 12px;
 }
 .top-card {
-  background: linear-gradient(160deg, #fff, #fff8e1);
+  background: linear-gradient(160deg, #fff, #fff3e0);
   border: 2px solid var(--color-dorado);
   text-align: center;
   padding: 24px;
@@ -112,9 +113,9 @@ a:hover { text-decoration: underline; }
   transition: transform 0.2s, box-shadow 0.2s;
 }
 .top-card:hover { transform: translateY(-4px); box-shadow: var(--sombra-card-hover); }
-.top-1 { border-color: #ffd700; background: linear-gradient(160deg, #fff8e1, #ffecb3); }
-.top-2 { border-color: #c0c0c0; background: linear-gradient(160deg, #f8f8f8, #e0e0e0); }
-.top-3 { border-color: #cd7f32; background: linear-gradient(160deg, #fbe9d4, #f4cfa5); }
+.top-1 { border-color: #f57c00; background: linear-gradient(160deg, #fff3e0, #ffe0b2); }
+.top-2 { border-color: #1e88e5; background: linear-gradient(160deg, #e3f2fd, #bbdefb); }
+.top-3 { border-color: #ffb74d; background: linear-gradient(160deg, #fff8f0, #ffe0b2); }
 .medal { font-size: 48px; line-height: 1; }
 .top-nombre { font-weight: 700; font-size: 18px; margin-top: 6px; color: var(--color-primario-oscuro); }
 .top-sucursal { font-size: 13px; }
