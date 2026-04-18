@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Incidencias - KPIs{% endblock %}
+{% block content %}
+
+{% if modo == 'admin' %}
+  <section class="hero"><h1>Gestión de Incidencias</h1></section>
+
+  <div class="card">
+    <h3>Registrar incidencia</h3>
+    <form method="post" class="form form-inline">
+      <input type="hidden" name="accion" value="crear">
+      <label>Legajo
+        <input name="legajo" list="legajos" required>
+      </label>
+      <datalist id="legajos">
+        {% for e in empleados %}
+          <option value="{{ e.legajo }}">{{ e.nombre }} {{ e.apellido }}</option>
+        {% endfor %}
+      </datalist>
+      <label>Tipo
+        <select name="tipo" required>
+          <option value="Tardanza">Tardanza</option>
+          <option value="Ausencia">Ausencia</option>
+          <option value="Desempeño">Desempeño</option>
+          <option value="Trato al cliente">Trato al cliente</option>
+          <option value="Otro">Otro</option>
+        </select>
+      </label>
+      <label>Fecha
+        <input type="date" name="fecha" required>
+      </label>
+      <label class="full">Descripción
+        <textarea name="descripcion" rows="2"></textarea>
+      </label>
+      <button class="btn btn-primary" type="submit">Registrar</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Filtros</h3>
+    <form method="get" class="form form-inline">
+      <label>Empleado (legajo)
+        <input name="empleado" value="{{ filtros.empleado }}">
+      </label>
+      <label>Mes (YYYY-MM)
+        <input name="mes" value="{{ filtros.mes }}" placeholder="2026-04">
+      </label>
+      <label>Estado
+        <select name="estado">
+          <option value="">Todos</option>
+          <option value="pendiente" {% if filtros.estado=='pendiente' %}selected{% endif %}>Pendiente</option>
+          <option value="resuelta" {% if filtros.estado=='resuelta' %}selected{% endif %}>Resuelta</option>
+          <option value="desestimada" {% if filtros.estado=='desestimada' %}selected{% endif %}>Desestimada</option>
+        </select>
+      </label>
+      <button class="btn" type="submit">Filtrar</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <table class="tabla">
+      <thead>
+        <tr><th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Descripción</th><th>Estado</th><th>Comentario empleado</th><th>Cambiar</th></tr>
+      </thead>
+      <tbody>
+        {% for i in lista %}
+          <tr>
+            <td>{{ i.fecha }}</td>
+            <td>{{ i.legajo }} - {{ i.nombre }} {{ i.apellido[:1] }}</td>
+            <td>{{ i.tipo }}</td>
+            <td>{{ i.descripcion }}</td>
+            <td><span class="estado estado-{{ i.estado }}">{{ i.estado }}</span></td>
+            <td>{{ i.comentario_empleado or '' }}</td>
+            <td>
+              <form method="post" class="form-inline-small">
+                <input type="hidden" name="accion" value="estado">
+                <input type="hidden" name="inc_id" value="{{ i.id }}">
+                <select name="estado">
+                  <option value="pendiente" {% if i.estado=='pendiente' %}selected{% endif %}>pendiente</option>
+                  <option value="resuelta" {% if i.estado=='resuelta' %}selected{% endif %}>resuelta</option>
+                  <option value="desestimada" {% if i.estado=='desestimada' %}selected{% endif %}>desestimada</option>
+                </select>
+                <button class="btn btn-small" type="submit">OK</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="muted center">Sin incidencias.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+{% else %}
+  <section class="hero"><h1>Mis incidencias del mes</h1></section>
+  <div class="card">
+    <table class="tabla">
+      <thead>
+        <tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Estado</th><th>Mi comentario</th></tr>
+      </thead>
+      <tbody>
+        {% for i in lista %}
+          <tr>
+            <td>{{ i.fecha }}</td>
+            <td>{{ i.tipo }}</td>
+            <td>{{ i.descripcion }}</td>
+            <td><span class="estado estado-{{ i.estado }}">{{ i.estado }}</span></td>
+            <td>
+              {% if i.estado == 'pendiente' %}
+                <form method="post" class="form-inline-small">
+                  <input type="hidden" name="inc_id" value="{{ i.id }}">
+                  <input name="comentario" value="{{ i.comentario_empleado or '' }}" placeholder="Tu comentario...">
+                  <button class="btn btn-small" type="submit">Guardar</button>
+                </form>
+              {% else %}
+                {{ i.comentario_empleado or '-' }}
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5" class="muted center">No tenés incidencias este mes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+{% endblock %}

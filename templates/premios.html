@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Premios e Insignias - Admin{% endblock %}
+{% block content %}
+<section class="hero"><h1>Premios e insignias</h1></section>
+
+<div class="card">
+  <h3>Registrar premio</h3>
+  <form method="post" class="form form-inline">
+    <label>Legajo
+      <input name="legajo" list="legajos-premio" required>
+    </label>
+    <datalist id="legajos-premio">
+      {% for e in empleados %}<option value="{{ e.legajo }}">{{ e.nombre }} {{ e.apellido }}</option>{% endfor %}
+    </datalist>
+    <label>Fecha <input type="date" name="fecha" required></label>
+    <label class="full">Descripción <input name="descripcion" required></label>
+    <button class="btn btn-primary" type="submit">Registrar premio</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Historial de premios</h3>
+  <table class="tabla">
+    <thead><tr><th>Fecha</th><th>Empleado</th><th>Descripción</th></tr></thead>
+    <tbody>
+      {% for p in premios %}
+        <tr>
+          <td>{{ p.fecha }}</td>
+          <td>{{ p.legajo }} - {{ p.nombre }} {{ p.apellido[:1] }}</td>
+          <td>{{ p.descripcion }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="muted center">Sin premios registrados.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section-title">Insignias otorgadas</h2>
+<div class="grid grid-2">
+  {% for tipo, meta in INSIGNIAS.items() %}
+    <div class="card">
+      <h3>{{ meta[0] }} {{ meta[1] }}</h3>
+      <ul class="lista-simple">
+        {% for r in insignias_por_tipo.get(tipo, []) %}
+          <li>{{ r.legajo }} - {{ r.nombre }} {{ r.apellido[:1] }} <span class="muted">({{ r.fecha_otorgada }})</span></li>
+        {% else %}
+          <li class="muted">Nadie todavía.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

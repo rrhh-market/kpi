@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Panel Admin - KPIs{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Panel general</h1>
+  <p class="muted">Ranking y métricas del mes en curso.</p>
+</section>
+
+<form method="get" class="filtros">
+  <label>Sucursal:</label>
+  <select name="sucursal" onchange="this.form.submit()">
+    <option value="Todas" {% if sucursal == 'Todas' %}selected{% endif %}>Todas</option>
+    {% for s in sucursales %}
+      <option value="{{ s }}" {% if sucursal == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<h2 class="section-title">🏆 Top 3 del mes</h2>
+<div class="top3">
+  {% set medallas = ['🥇', '🥈', '🥉'] %}
+  {% for t in top3 %}
+    <div class="card top-card top-{{ loop.index }}">
+      <div class="medal">{{ medallas[loop.index0] }}</div>
+      <div class="top-nombre">{{ t.legajo }} - {{ t.nombre }} {{ t.apellido[:1] }}</div>
+      <div class="top-sucursal muted">{{ t.sucursal }}</div>
+      <div class="top-score">Score <strong>{{ t.score }}</strong></div>
+      <div class="top-sub">
+        <span>🎫 {{ t.tickets }}</span>
+        <span>👗 {{ '%.2f'|format(t.upt) }}</span>
+      </div>
+    </div>
+  {% else %}
+    <p class="muted">Sin datos aún este mes.</p>
+  {% endfor %}
+</div>
+
+<h2 class="section-title">Tickets por hora - hoy {{ hoy.strftime('%d/%m') }}{% if sucursal != 'Todas' %} · {{ sucursal }}{% endif %}</h2>
+<div class="card chart-card">
+  <div class="bar-chart">
+    {% for h in serie_horas %}
+      <div class="bar-col">
+        <div class="bar-value">{{ h.tickets }}</div>
+        <div class="bar" style="height: {{ (h.tickets / max_h * 160)|round(0) }}px"></div>
+        <div class="bar-label">{{ '%02d'|format(h.hora) }}h</div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<h2 class="section-title">Ranking completo</h2>
+<div class="card">
+  <table class="tabla sortable" id="tabla-ranking">
+    <thead>
+      <tr>
+        <th data-sort="number">#</th>
+        <th data-sort="text">Legajo</th>
+        <th data-sort="text">Nombre</th>
+        <th data-sort="text">Sucursal</th>
+        <th data-sort="number">Tickets mes</th>
+        <th data-sort="number">UPT prom</th>
+        <th data-sort="number">Prendas</th>
+        <th data-sort="number">Incidencias</th>
+        <th data-sort="number">Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in ranking %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ r.legajo }}</td>
+          <td>{{ r.nombre }} {{ r.apellido[:1] }}</td>
+          <td>{{ r.sucursal }}</td>
+          <td>{{ r.tickets }}</td>
+          <td>{{ '%.2f'|format(r.upt) }}</td>
+          <td>{{ '%.0f'|format(r.prendas) }}</td>
+          <td>{{ r.incidencias }}</td>
+          <td><strong>{{ r.score }}</strong></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="muted center">Sin datos.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  habilitarOrdenTabla(document.getElementById('tabla-ranking'));
+</script>
+{% endblock %}

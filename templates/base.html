@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}KPIs{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% if current_user.id %}
+<header class="topbar">
+  <div class="brand">📊 KPIs Cajeros</div>
+  <nav class="menu">
+    {% if current_user.rol == 'admin' %}
+      <a href="{{ url_for('dashboard_admin') }}">Dashboard</a>
+      <a href="{{ url_for('cargar_kpis') }}">Cargar KPIs</a>
+      <a href="{{ url_for('admin_incidencias') }}">Incidencias</a>
+      <a href="{{ url_for('admin_empleados') }}">Empleados</a>
+      <a href="{{ url_for('admin_premios') }}">Premios</a>
+    {% else %}
+      <a href="{{ url_for('dashboard_empleado') }}">Mi Panel</a>
+      <a href="{{ url_for('incidencias_empleado') }}">Mis Incidencias</a>
+    {% endif %}
+  </nav>
+  <div class="user-info">
+    <span>{{ current_user.legajo }} - {{ current_user.nombre }} {{ current_user.apellido[:1] }}</span>
+    <a class="btn-logout" href="{{ url_for('logout') }}">Salir</a>
+  </div>
+</header>
+{% endif %}
+
+<main class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flashes">
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+
+<script src="{{ url_for('static', filename='main.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

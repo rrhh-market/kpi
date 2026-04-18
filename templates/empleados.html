@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Empleados - Admin{% endblock %}
+{% block content %}
+<section class="hero"><h1>Gestión de empleados</h1></section>
+
+<div class="card">
+  <h3>Crear empleado</h3>
+  <form method="post" class="form form-inline">
+    <input type="hidden" name="accion" value="crear">
+    <label>Legajo <input name="legajo" required></label>
+    <label>Nombre <input name="nombre" required></label>
+    <label>Apellido <input name="apellido" required></label>
+    <label>Contraseña <input name="password" required></label>
+    <label>Sucursal
+      <select name="sucursal">
+        {% for s in sucursales %}<option>{{ s }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Rol
+      <select name="rol">
+        <option value="empleado">empleado</option>
+        <option value="admin">admin</option>
+      </select>
+    </label>
+    <button class="btn btn-primary" type="submit">Crear</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Empleados existentes</h3>
+  <table class="tabla">
+    <thead>
+      <tr><th>Legajo</th><th>Nombre</th><th>Sucursal</th><th>Rol</th><th>Activo</th><th>Acciones</th></tr>
+    </thead>
+    <tbody>
+      {% for e in empleados %}
+      <tr>
+        <td>{{ e.legajo }}</td>
+        <td>
+          <details>
+            <summary>{{ e.nombre }} {{ e.apellido }}</summary>
+            <form method="post" class="form form-inline">
+              <input type="hidden" name="accion" value="editar">
+              <input type="hidden" name="emp_id" value="{{ e.id }}">
+              <label>Nombre <input name="nombre" value="{{ e.nombre }}"></label>
+              <label>Apellido <input name="apellido" value="{{ e.apellido }}"></label>
+              <label>Sucursal
+                <select name="sucursal">
+                  {% for s in sucursales %}
+                    <option value="{{ s }}" {% if s == e.sucursal %}selected{% endif %}>{{ s }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>Rol
+                <select name="rol">
+                  <option value="empleado" {% if e.rol=='empleado' %}selected{% endif %}>empleado</option>
+                  <option value="admin" {% if e.rol=='admin' %}selected{% endif %}>admin</option>
+                </select>
+              </label>
+              <button class="btn btn-small" type="submit">Guardar</button>
+            </form>
+          </details>
+        </td>
+        <td>{{ e.sucursal }}</td>
+        <td>{{ e.rol }}</td>
+        <td>
+          <span class="estado estado-{{ 'resuelta' if e.activo else 'desestimada' }}">
+            {{ 'sí' if e.activo else 'no' }}
+          </span>
+        </td>
+        <td>
+          <form method="post" class="form-inline-small">
+            <input type="hidden" name="accion" value="toggle">
+            <input type="hidden" name="emp_id" value="{{ e.id }}">
+            <button class="btn btn-small" type="submit">{{ 'Desactivar' if e.activo else 'Activar' }}</button>
+          </form>
+          <form method="post" class="form-inline-small">
+            <input type="hidden" name="accion" value="reset_pw">
+            <input type="hidden" name="emp_id" value="{{ e.id }}">
+            <input name="nueva" placeholder="Nueva pass" required>
+            <button class="btn btn-small" type="submit">Reset</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

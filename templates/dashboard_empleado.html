@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Mi Panel - KPIs{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Hola, {{ current_user.nombre }} 👋</h1>
+  <p class="muted">Legajo {{ current_user.legajo }} · Sucursal {{ current_user.sucursal }}</p>
+</section>
+
+<h2 class="section-title">KPIs de hoy</h2>
+<div class="grid grid-3">
+  <div class="card kpi">
+    <div class="kpi-label">Tickets emitidos</div>
+    <div class="kpi-value" id="kpi-dia-tickets">{{ dia.tickets or 0 }}</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">UPT (prendas por ticket)</div>
+    <div class="kpi-value" id="kpi-dia-upt">{{ '%.2f'|format(dia.upt or 0) }}</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">Prendas totales</div>
+    <div class="kpi-value" id="kpi-dia-prendas">{{ '%.0f'|format(dia.prendas or 0) }}</div>
+  </div>
+</div>
+
+<h2 class="section-title">Acumulado del mes</h2>
+<div class="grid grid-5">
+  <div class="card kpi">
+    <div class="kpi-label">Tickets</div>
+    <div class="kpi-value" id="kpi-mes-tickets">{{ mes.tickets }}</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">UPT promedio</div>
+    <div class="kpi-value" id="kpi-mes-upt">{{ '%.2f'|format(mes.upt) }}</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">Prendas</div>
+    <div class="kpi-value" id="kpi-mes-prendas">{{ '%.0f'|format(mes.prendas) }}</div>
+  </div>
+  <div class="card kpi">
+    <div class="kpi-label">Incidencias</div>
+    <div class="kpi-value" id="kpi-mes-incidencias">{{ mes.incidencias }}</div>
+  </div>
+  <div class="card kpi kpi-score">
+    <div class="kpi-label">Score del mes</div>
+    <div class="kpi-value" id="kpi-mes-score">{{ mes.score }}</div>
+  </div>
+</div>
+
+{% if posicion %}
+<div class="card ranking-pos">
+  <span class="trophy">🏆</span>
+  <strong>Estás {{ posicion }}° de {{ total_cajeros }} cajeros</strong> en tu sucursal ({{ current_user.sucursal }}).
+</div>
+{% endif %}
+
+<h2 class="section-title">Tickets por hora - hoy {{ hoy.strftime('%d/%m') }}</h2>
+<div class="card chart-card">
+  <div class="bar-chart">
+    {% for h in serie_horas %}
+      <div class="bar-col">
+        <div class="bar-value">{{ h.tickets }}</div>
+        <div class="bar" style="height: {{ (h.tickets / max_h * 160)|round(0) }}px"></div>
+        <div class="bar-label">{{ '%02d'|format(h.hora) }}h</div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<h2 class="section-title">Últimos 7 días</h2>
+<div class="card">
+  <table class="tabla">
+    <thead>
+      <tr><th>Fecha</th><th>Tickets</th><th>UPT</th><th>Prendas</th></tr>
+    </thead>
+    <tbody>
+      {% for row in historial %}
+        <tr>
+          <td>{{ row.fecha }}</td>
+          <td>{{ row.tickets or 0 }}</td>
+          <td>{{ '%.2f'|format(row.upt or 0) }}</td>
+          <td>{{ '%.0f'|format(row.prendas or 0) }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="muted center">Sin datos recientes.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section-title">Tus insignias</h2>
+<div class="badges">
+  {% for i in insignias %}
+    <div class="badge" title="Otorgada el {{ i.fecha }}">
+      <div class="badge-emoji">{{ i.emoji }}</div>
+      <div class="badge-name">{{ i.nombre }}</div>
+    </div>
+  {% else %}
+    <p class="muted">Todavía no tenés insignias. ¡Seguí así!</p>
+  {% endfor %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  iniciarRefreshAutomatico();
+</script>
+{% endblock %}

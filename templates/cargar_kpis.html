@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Cargar KPIs - Admin{% endblock %}
+{% block content %}
+<section class="hero"><h1>Carga de KPIs</h1></section>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h3>Carga manual</h3>
+    <form method="post" class="form">
+      <input type="hidden" name="modo" value="manual">
+      <label>Legajo</label>
+      <input name="legajo" required>
+      <label>Fecha</label>
+      <input name="fecha" type="date" required>
+      <label>Tickets cantidad</label>
+      <input name="tickets_cantidad" type="number" min="0" required>
+      <label>Prendas por ticket (UPT)</label>
+      <input name="prendas_por_ticket" type="number" step="0.01" min="0" required>
+      <label>Horas trabajadas</label>
+      <input name="horas_trabajadas" type="number" step="0.25" min="0">
+      <button class="btn btn-primary" type="submit">Guardar KPI</button>
+      <p class="muted">Prendas totales se calcula automáticamente (tickets × UPT).</p>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Carga masiva por CSV</h3>
+    <form method="post" action="{{ url_for('importar_csv') }}" enctype="multipart/form-data" class="form">
+      <label>Archivo CSV (legajo, fecha, tickets_cantidad, prendas_por_ticket, sucursal)</label>
+      <input type="file" name="csv_file" accept=".csv" required>
+      <input type="hidden" name="preview" value="1">
+      <button class="btn btn-primary" type="submit">Previsualizar</button>
+    </form>
+    <p class="muted small">La fecha debe tener formato YYYY-MM-DD.</p>
+  </div>
+</div>
+
+{% if preview %}
+<div class="card">
+  <h3>Vista previa del CSV</h3>
+  <p>Filas listas para importar: <strong>{{ preview.ok|length }}</strong>
+     · Con errores: <strong>{{ preview.err|length }}</strong></p>
+
+  {% if preview.ok %}
+    <table class="tabla">
+      <thead><tr><th>Línea</th><th>Legajo</th><th>Nombre</th><th>Fecha</th><th>Tickets</th><th>UPT</th><th>Prendas total</th></tr></thead>
+      <tbody>
+        {% for r in preview.ok %}
+          <tr>
+            <td>{{ r.linea }}</td><td>{{ r.legajo }}</td><td>{{ r.nombre }}</td>
+            <td>{{ r.fecha }}</td><td>{{ r.tickets }}</td><td>{{ r.upt }}</td><td>{{ r.prendas_total }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if preview.err %}
+    <h4>Errores</h4>
+    <table class="tabla">
+      <thead><tr><th>Línea</th><th>Legajo</th><th>Motivo</th></tr></thead>
+      <tbody>
+        {% for r in preview.err %}
+          <tr><td>{{ r.linea }}</td><td>{{ r.legajo }}</td><td class="err">{{ r.error }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  {% if preview.ok %}
+    <form method="post" action="{{ url_for('confirmar_csv') }}">
+      <input type="hidden" name="csv_content" value="{{ preview.csv_content }}">
+      <button class="btn btn-primary" type="submit">Confirmar importación</button>
+    </form>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>Configuración de pesos del Score</h3>
+  <p class="muted">Fórmula: <code>score = tickets·p1 + UPT·p2 + prendas·p3 − incidencias·p4</code></p>
+  <form method="post" action="{{ url_for('guardar_config') }}" class="form form-inline">
+    <label>Peso tickets
+      <input name="peso_tickets" type="number" step="0.1" value="{{ pesos.peso_tickets }}">
+    </label>
+    <label>Peso UPT
+      <input name="peso_upt" type="number" step="0.1" value="{{ pesos.peso_upt }}">
+    </label>
+    <label>Peso prendas
+      <input name="peso_prendas" type="number" step="0.1" value="{{ pesos.peso_prendas }}">
+    </label>
+    <label>Peso incidencias (penalización)
+      <input name="peso_incidencias" type="number" step="0.1" value="{{ pesos.peso_incidencias }}">
+    </label>
+    <button class="btn btn-primary" type="submit">Guardar pesos</button>
+  </form>
+</div>
+
+{% endblock %}
