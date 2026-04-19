@@ -9,7 +9,7 @@
 <form method="get" class="filtros">
   <label>Sucursal:</label>
   <select name="sucursal" onchange="this.form.submit()">
-    <option value="Todas" {% if sucursal == 'Todas' %}selected{% endif %}>Todas</option>
+    <option value="Todas" {% if sucursal == 'Todas' %}selected{% endif %}>{{ etiqueta_todas }}</option>
     {% for s in sucursales %}
       <option value="{{ s }}" {% if sucursal == s %}selected{% endif %}>{{ s }}</option>
     {% endfor %}

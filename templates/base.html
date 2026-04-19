@@ -18,6 +18,11 @@
       <a href="{{ url_for('admin_incidencias') }}"  class="{% if ruta == 'admin_incidencias' %}active{% endif %}">Incidencias</a>
       <a href="{{ url_for('admin_empleados') }}"    class="{% if ruta == 'admin_empleados' %}active{% endif %}">Empleados</a>
       <a href="{{ url_for('admin_premios') }}"      class="{% if ruta == 'admin_premios' %}active{% endif %}">Premios</a>
+    {% elif current_user.rol == 'supervisor' %}
+      <a href="{{ url_for('dashboard_admin') }}"    class="{% if ruta == 'dashboard_admin' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('admin_incidencias') }}"  class="{% if ruta == 'admin_incidencias' %}active{% endif %}">Incidencias</a>
+      <a href="{{ url_for('admin_empleados') }}"    class="{% if ruta == 'admin_empleados' %}active{% endif %}">Empleados</a>
+      <a href="{{ url_for('admin_premios') }}"      class="{% if ruta == 'admin_premios' %}active{% endif %}">Premios</a>
     {% else %}
       <a href="{{ url_for('dashboard_empleado') }}"  class="{% if ruta == 'dashboard_empleado' %}active{% endif %}">Mi Panel</a>
       <a href="{{ url_for('incidencias_empleado') }}" class="{% if ruta == 'incidencias_empleado' %}active{% endif %}">Mis Incidencias</a>
@@ -25,6 +30,9 @@
   </nav>
   <div class="user-info">
     <span>{{ current_user.legajo }} · {{ current_user.nombre }} {{ current_user.apellido[:1] }}</span>
+    {% if current_user.rol == 'supervisor' %}
+      <span class="rol-badge" title="Solo lectura">👁 Supervisor</span>
+    {% endif %}
     <a class="btn-logout" href="{{ url_for('logout') }}">Salir</a>
   </div>
 </header>

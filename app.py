@@ -123,6 +123,15 @@ def init_db():
         clave TEXT PRIMARY KEY,
         valor TEXT NOT NULL
     );
+
+    -- Sucursales que un supervisor tiene asignadas (rol='supervisor').
+    -- Un supervisor puede cubrir varias; solo lee datos de esas sucursales.
+    CREATE TABLE IF NOT EXISTS supervisor_sucursales (
+        empleado_id INTEGER NOT NULL,
+        sucursal    TEXT NOT NULL,
+        PRIMARY KEY (empleado_id, sucursal),
+        FOREIGN KEY (empleado_id) REFERENCES empleados(id)
+    );
     """)
     # Configuración por defecto de pesos del score mensual
     defaults = {
@@ -152,6 +161,7 @@ def login_required(f):
 
 
 def admin_required(f):
+    """Solo admin. Usar en rutas de escritura."""
     @wraps(f)
     def wrap(*args, **kwargs):
         if session.get("rol") != "admin":
@@ -159,6 +169,31 @@ def admin_required(f):
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
     return wrap
+
+
+def staff_required(f):
+    """Admin o supervisor. Supervisor tiene solo acceso de lectura."""
+    @wraps(f)
+    def wrap(*args, **kwargs):
+        if session.get("rol") not in ("admin", "supervisor"):
+            flash("Acceso restringido.", "error")
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return wrap
+
+
+def sucursales_visibles():
+    """Sucursales que el usuario actual puede ver.
+    - admin -> None (todas)
+    - supervisor -> lista de sucursales asignadas
+    - empleado -> [su sucursal]
+    """
+    rol = session.get("rol")
+    if rol == "admin":
+        return None
+    if rol == "supervisor":
+        return session.get("sucursales_supervisor") or []
+    return [session.get("sucursal")] if session.get("sucursal") else []
 
 
 @app.context_processor
@@ -234,13 +269,19 @@ def resumen_mensual(empleado_id, mes_inicio=None):
 
 
 def ranking_mensual(sucursal=None, mes_inicio=None):
-    """Devuelve lista de cajeros ordenados por score desc del mes."""
+    """Devuelve lista de cajeros ordenados por score desc del mes.
+    `sucursal` puede ser None/''/'Todas' (sin filtro), un string (una sucursal)
+    o una lista de sucursales.
+    """
     db = get_db()
     if mes_inicio is None:
         mes_inicio = primer_dia_mes()
     q = "SELECT id, legajo, nombre, apellido, sucursal FROM empleados WHERE rol='empleado' AND activo=1"
     params = []
-    if sucursal and sucursal != "Todas":
+    if isinstance(sucursal, (list, tuple)) and sucursal:
+        q += " AND sucursal IN (%s)" % ",".join("?" * len(sucursal))
+        params.extend(sucursal)
+    elif isinstance(sucursal, str) and sucursal and sucursal != "Todas":
         q += " AND sucursal = ?"
         params.append(sucursal)
     empleados = db.execute(q, params).fetchall()
@@ -367,6 +408,13 @@ def login():
             session["apellido"]    = emp["apellido"]
             session["rol"]         = emp["rol"]
             session["sucursal"]    = emp["sucursal"]
+            # Si es supervisor, cargo las sucursales que tiene asignadas.
+            if emp["rol"] == "supervisor":
+                sucs = get_db().execute(
+                    "SELECT sucursal FROM supervisor_sucursales WHERE empleado_id=?",
+                    (emp["id"],),
+                ).fetchall()
+                session["sucursales_supervisor"] = [r["sucursal"] for r in sucs]
             flash(f"Bienvenido, {emp['nombre']}!", "success")
             return redirect(url_for("dashboard"))
         flash("Legajo o contraseña incorrectos.", "error")
@@ -383,7 +431,7 @@ def logout():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    if session["rol"] == "admin":
+    if session["rol"] in ("admin", "supervisor"):
         return redirect(url_for("dashboard_admin"))
     return redirect(url_for("dashboard_empleado"))
 
@@ -515,13 +563,37 @@ def incidencias_empleado():
 # --- Dashboard Admin ---
 @app.route("/admin/dashboard")
 @login_required
-@admin_required
+@staff_required
 def dashboard_admin():
-    sucursal = request.args.get("sucursal", "Todas")
-    ranking = ranking_mensual(None if sucursal == "Todas" else sucursal)
+    # Para supervisor: el selector solo muestra sus sucursales y "Todas" equivale
+    # a "todas las que puede ver".
+    permitidas = sucursales_visibles()  # None = admin (sin restricción)
+    sucursal_input = request.args.get("sucursal", "Todas")
+
+    if permitidas is None:
+        # Admin: puede ver una o todas
+        opciones_sucursal = SUCURSALES
+        if sucursal_input == "Todas":
+            filtro_ranking = None
+            filtro_horas = None
+        else:
+            filtro_ranking = sucursal_input
+            filtro_horas = [sucursal_input]
+    else:
+        # Supervisor: acotado a sus sucursales
+        opciones_sucursal = permitidas
+        if sucursal_input in permitidas:
+            filtro_ranking = [sucursal_input]
+            filtro_horas = [sucursal_input]
+        else:
+            filtro_ranking = permitidas
+            filtro_horas = permitidas
+            sucursal_input = "Todas"
+
+    ranking = ranking_mensual(filtro_ranking)
     top3 = ranking[:3]
 
-    # Tickets por hora (suma de todos los cajeros de la sucursal filtrada, día de hoy)
+    # Tickets por hora del día actual, filtrados por sucursales visibles
     hoy = date.today()
     db = get_db()
     q = """
@@ -531,9 +603,9 @@ def dashboard_admin():
          WHERE h.fecha=?
     """
     params = [hoy.isoformat()]
-    if sucursal != "Todas":
-        q += " AND e.sucursal=?"
-        params.append(sucursal)
+    if filtro_horas:
+        q += " AND e.sucursal IN (%s)" % ",".join("?" * len(filtro_horas))
+        params.extend(filtro_horas)
     q += " GROUP BY h.hora ORDER BY h.hora"
     rows = db.execute(q, params).fetchall()
     mapa = {r["hora"]: r["t"] for r in rows}
@@ -542,7 +614,9 @@ def dashboard_admin():
 
     return render_template(
         "dashboard_admin.html",
-        ranking=ranking, top3=top3, sucursal=sucursal, sucursales=SUCURSALES,
+        ranking=ranking, top3=top3, sucursal=sucursal_input,
+        sucursales=opciones_sucursal,
+        etiqueta_todas=("Todas mis sucursales" if permitidas is not None else "Todas"),
         serie_horas=serie_horas, max_h=max_h, hoy=hoy,
     )
 
@@ -711,10 +785,14 @@ def confirmar_csv():
 # --- Gestión de incidencias (admin) ---
 @app.route("/admin/incidencias", methods=["GET", "POST"])
 @login_required
-@admin_required
+@staff_required
 def admin_incidencias():
     db = get_db()
     if request.method == "POST":
+        # Supervisor es solo lectura: rechazamos cualquier escritura.
+        if session.get("rol") != "admin":
+            flash("Los supervisores no pueden modificar incidencias.", "error")
+            return redirect(url_for("admin_incidencias"))
         accion = request.form.get("accion")
         if accion == "crear":
             legajo = request.form["legajo"].strip()
@@ -744,12 +822,18 @@ def admin_incidencias():
     f_mes = request.args.get("mes", "")
     f_est = request.args.get("estado", "")
     q = """
-        SELECT i.*, e.legajo, e.nombre, e.apellido
+        SELECT i.*, e.legajo, e.nombre, e.apellido, e.sucursal
           FROM incidencias i
           JOIN empleados e ON e.id = i.empleado_id
          WHERE 1=1
     """
     params = []
+    permitidas = sucursales_visibles()
+    if permitidas is not None:
+        if not permitidas:
+            permitidas = [""]
+        q += " AND e.sucursal IN (%s)" % ",".join("?" * len(permitidas))
+        params.extend(permitidas)
     if f_emp:
         q += " AND e.legajo = ?"; params.append(f_emp)
     if f_mes:
@@ -758,7 +842,15 @@ def admin_incidencias():
         q += " AND i.estado = ?"; params.append(f_est)
     q += " ORDER BY i.fecha DESC"
     lista = db.execute(q, params).fetchall()
-    empleados = db.execute("SELECT legajo, nombre, apellido FROM empleados WHERE rol='empleado' ORDER BY legajo").fetchall()
+
+    q_emp = "SELECT legajo, nombre, apellido FROM empleados WHERE rol='empleado'"
+    p_emp = []
+    if permitidas is not None:
+        q_emp += " AND sucursal IN (%s)" % ",".join("?" * len(permitidas))
+        p_emp.extend(permitidas)
+    q_emp += " ORDER BY legajo"
+    empleados = db.execute(q_emp, p_emp).fetchall()
+
     return render_template(
         "incidencias.html", modo="admin", lista=lista, empleados=empleados,
         filtros={"empleado": f_emp, "mes": f_mes, "estado": f_est},
@@ -768,10 +860,26 @@ def admin_incidencias():
 # --- Gestión de empleados (admin) ---
 @app.route("/admin/empleados", methods=["GET", "POST"])
 @login_required
-@admin_required
+@staff_required
 def admin_empleados():
     db = get_db()
+
+    def guardar_sucursales_supervisor(emp_id, rol):
+        """Si el empleado es supervisor, persiste las sucursales marcadas en la tabla m:n."""
+        db.execute("DELETE FROM supervisor_sucursales WHERE empleado_id=?", (emp_id,))
+        if rol == "supervisor":
+            marcadas = request.form.getlist("sucursales_cubiertas")
+            for s in marcadas:
+                if s in SUCURSALES:
+                    db.execute(
+                        "INSERT INTO supervisor_sucursales(empleado_id, sucursal) VALUES (?,?)",
+                        (emp_id, s),
+                    )
+
     if request.method == "POST":
+        if session.get("rol") != "admin":
+            flash("Los supervisores no pueden modificar empleados.", "error")
+            return redirect(url_for("admin_empleados"))
         accion = request.form.get("accion")
         if accion == "crear":
             legajo  = request.form["legajo"].strip()
@@ -781,20 +889,23 @@ def admin_empleados():
             sucursal= request.form["sucursal"]
             rol     = request.form.get("rol", "empleado")
             try:
-                db.execute("""
+                cur = db.execute("""
                     INSERT INTO empleados(legajo, nombre, apellido, password_hash, sucursal, rol, activo)
                     VALUES (?,?,?,?,?,?,1)
                 """, (legajo, nombre, apellido, hash_pw(pw), sucursal, rol))
+                guardar_sucursales_supervisor(cur.lastrowid, rol)
                 db.commit()
                 flash("Empleado creado.", "success")
             except sqlite3.IntegrityError:
                 flash("Ya existe un empleado con ese legajo.", "error")
         elif accion == "editar":
             emp_id  = request.form["emp_id"]
+            rol     = request.form.get("rol", "empleado")
             db.execute("""
                 UPDATE empleados SET nombre=?, apellido=?, sucursal=?, rol=? WHERE id=?
             """, (request.form["nombre"].strip(), request.form["apellido"].strip(),
-                  request.form["sucursal"], request.form.get("rol", "empleado"), emp_id))
+                  request.form["sucursal"], rol, emp_id))
+            guardar_sucursales_supervisor(emp_id, rol)
             db.commit()
             flash("Empleado actualizado.", "success")
         elif accion == "toggle":
@@ -810,17 +921,41 @@ def admin_empleados():
             flash("Contraseña reseteada.", "success")
         return redirect(url_for("admin_empleados"))
 
-    empleados = db.execute("SELECT * FROM empleados ORDER BY rol DESC, legajo").fetchall()
-    return render_template("empleados.html", empleados=empleados, sucursales=SUCURSALES)
+    permitidas = sucursales_visibles()
+    q = "SELECT * FROM empleados"
+    params = []
+    if permitidas is not None:
+        # Supervisor ve a los empleados de sus sucursales (más a sí mismo si aplica)
+        q += " WHERE sucursal IN (%s) OR id=?" % ",".join("?" * len(permitidas or [""]))
+        params.extend(permitidas or [""])
+        params.append(session["empleado_id"])
+    q += " ORDER BY rol DESC, legajo"
+    empleados = db.execute(q, params).fetchall()
+
+    # Mapa empleado_id -> lista de sucursales (para supervisores)
+    sup_rows = db.execute(
+        "SELECT empleado_id, sucursal FROM supervisor_sucursales"
+    ).fetchall()
+    sup_sucs = defaultdict(list)
+    for r in sup_rows:
+        sup_sucs[r["empleado_id"]].append(r["sucursal"])
+
+    return render_template(
+        "empleados.html",
+        empleados=empleados, sucursales=SUCURSALES, sup_sucs=sup_sucs,
+    )
 
 
 # --- Premios e insignias (admin) ---
 @app.route("/admin/premios", methods=["GET", "POST"])
 @login_required
-@admin_required
+@staff_required
 def admin_premios():
     db = get_db()
     if request.method == "POST":
+        if session.get("rol") != "admin":
+            flash("Los supervisores no pueden registrar premios.", "error")
+            return redirect(url_for("admin_premios"))
         legajo = request.form["legajo"].strip()
         descripcion = request.form["descripcion"].strip()
         fecha = datetime.strptime(request.form["fecha"], "%Y-%m-%d").date()
@@ -836,26 +971,39 @@ def admin_premios():
             flash("Premio registrado.", "success")
         return redirect(url_for("admin_premios"))
 
-    premios = db.execute("""
+    permitidas = sucursales_visibles()
+    filtro_suc_sql = ""
+    filtro_params = []
+    if permitidas is not None:
+        ph = ",".join("?" * len(permitidas or [""]))
+        filtro_suc_sql = f" AND e.sucursal IN ({ph})"
+        filtro_params = list(permitidas or [""])
+
+    premios = db.execute(f"""
         SELECT p.*, e.legajo, e.nombre, e.apellido
           FROM premios p JOIN empleados e ON e.id = p.empleado_id
+         WHERE 1=1 {filtro_suc_sql}
          ORDER BY p.fecha DESC
-    """).fetchall()
+    """, filtro_params).fetchall()
 
-    # Insignias agrupadas por tipo
-    ins_rows = db.execute("""
+    ins_rows = db.execute(f"""
         SELECT i.tipo, e.legajo, e.nombre, e.apellido, i.fecha_otorgada
           FROM insignias i JOIN empleados e ON e.id = i.empleado_id
+         WHERE 1=1 {filtro_suc_sql}
          ORDER BY i.tipo, i.fecha_otorgada DESC
-    """).fetchall()
+    """, filtro_params).fetchall()
     insignias_por_tipo = defaultdict(list)
     for r in ins_rows:
         if r["tipo"] in INSIGNIAS:
             insignias_por_tipo[r["tipo"]].append(dict(r))
 
-    empleados = db.execute(
-        "SELECT legajo, nombre, apellido FROM empleados WHERE rol='empleado' ORDER BY legajo"
-    ).fetchall()
+    q_emp = "SELECT legajo, nombre, apellido FROM empleados WHERE rol='empleado'"
+    p_emp = []
+    if permitidas is not None:
+        q_emp += " AND sucursal IN (%s)" % ",".join("?" * len(permitidas or [""]))
+        p_emp.extend(permitidas or [""])
+    q_emp += " ORDER BY legajo"
+    empleados = db.execute(q_emp, p_emp).fetchall()
 
     return render_template(
         "premios.html",

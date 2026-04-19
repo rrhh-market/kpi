@@ -3,8 +3,13 @@
 {% block content %}
 
 {% if modo == 'admin' %}
-  <section class="hero"><h1>Gestión de Incidencias</h1></section>
+  {% set solo_lectura = current_user.rol == 'supervisor' %}
+  <section class="hero">
+    <h1>Gestión de Incidencias</h1>
+    {% if solo_lectura %}<p class="muted">Vista de supervisor (solo lectura).</p>{% endif %}
+  </section>
 
+  {% if not solo_lectura %}
   <div class="card">
     <h3>Registrar incidencia</h3>
     <form method="post" class="form form-inline">
@@ -35,6 +40,7 @@
       <button class="btn btn-primary" type="submit">Registrar</button>
     </form>
   </div>
+  {% endif %}
 
   <div class="card">
     <h3>Filtros</h3>
@@ -60,7 +66,11 @@
   <div class="card">
     <table class="tabla">
       <thead>
-        <tr><th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Descripción</th><th>Estado</th><th>Comentario empleado</th><th>Cambiar</th></tr>
+        <tr>
+          <th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Descripción</th>
+          <th>Estado</th><th>Comentario empleado</th>
+          {% if not solo_lectura %}<th>Cambiar</th>{% endif %}
+        </tr>
       </thead>
       <tbody>
         {% for i in lista %}
@@ -71,6 +81,7 @@
             <td>{{ i.descripcion }}</td>
             <td><span class="estado estado-{{ i.estado }}">{{ i.estado }}</span></td>
             <td>{{ i.comentario_empleado or '' }}</td>
+            {% if not solo_lectura %}
             <td>
               <form method="post" class="form-inline-small">
                 <input type="hidden" name="accion" value="estado">
@@ -83,9 +94,10 @@
                 <button class="btn btn-small" type="submit">OK</button>
               </form>
             </td>
+            {% endif %}
           </tr>
         {% else %}
-          <tr><td colspan="7" class="muted center">Sin incidencias.</td></tr>
+          <tr><td colspan="{{ 7 if not solo_lectura else 6 }}" class="muted center">Sin incidencias.</td></tr>
         {% endfor %}
       </tbody>
     </table>

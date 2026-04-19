@@ -57,6 +57,19 @@ def sembrar():
         """, (legajo, nombre, apellido, hash_pw("cajero123"), suc))
     conn.commit()
 
+    # Supervisora de ejemplo: cubre CENTRAL y LURO (solo lectura).
+    cur.execute("""
+        INSERT INTO empleados(legajo, nombre, apellido, password_hash, sucursal, rol, activo)
+        VALUES (?, ?, ?, ?, ?, 'supervisor', 1)
+    """, ("500", "Carolina", "Gutierrez", hash_pw("super123"), "CENTRAL"))
+    sup_id = cur.lastrowid
+    for s in ("CENTRAL", "LURO"):
+        cur.execute(
+            "INSERT INTO supervisor_sucursales(empleado_id, sucursal) VALUES (?, ?)",
+            (sup_id, s),
+        )
+    conn.commit()
+
     empleados = {
         r["legajo"]: dict(r)
         for r in cur.execute("SELECT id, legajo, nombre, apellido, sucursal FROM empleados WHERE rol='empleado'")
@@ -162,7 +175,8 @@ def sembrar():
     conn.close()
 
     print("✓ Seed completado.")
-    print("  Admin:  legajo=0    pass=admin123")
+    print("  Admin:      legajo=0    pass=admin123")
+    print("  Supervisor: legajo=500  pass=super123  (sucursales: CENTRAL, LURO)")
     print("  Cajeros:")
     for leg, nombre, apellido, suc in cajeros:
         print(f"    legajo={leg:>4}  {nombre} {apellido} ({suc})  pass=cajero123")

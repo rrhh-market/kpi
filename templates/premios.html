@@ -1,8 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Premios e Insignias - Admin{% endblock %}
 {% block content %}
-<section class="hero"><h1>Premios e insignias</h1></section>
+{% set solo_lectura = current_user.rol == 'supervisor' %}
+<section class="hero">
+  <h1>Premios e insignias</h1>
+  {% if solo_lectura %}<p class="muted">Vista de supervisor (solo lectura).</p>{% endif %}
+</section>
 
+{% if not solo_lectura %}
 <div class="card">
   <h3>Registrar premio</h3>
   <form method="post" class="form form-inline">
@@ -17,6 +22,7 @@
     <button class="btn btn-primary" type="submit">Registrar premio</button>
   </form>
 </div>
+{% endif %}
 
 <div class="card">
   <h3>Historial de premios</h3>
