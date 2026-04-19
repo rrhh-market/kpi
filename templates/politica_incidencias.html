@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Política de Incidencias{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Política de Incidencias</h1>
+  <p class="muted">Reglas vigentes para la carga y gestión de incidencias del personal.</p>
+</section>
+
+<div class="card">
+  <h3>1. Quién puede cargar una incidencia</h3>
+  <ul class="lista-simple">
+    <li><strong>Admin / RRHH:</strong> puede cargar cualquier tipo de incidencia, con o sin plazo.</li>
+    <li><strong>Encargada (supervisora):</strong> visualiza las incidencias de sus sucursales en modo lectura. No carga ni aprueba.</li>
+    <li><strong>Empleado:</strong> puede <em>auto-reportar</em> un subconjunto acotado de tipos, dentro de un plazo máximo.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>2. Tipos disponibles para auto-reporte</h3>
+  <div class="grid grid-2">
+    {% for t in tipos_autoreporte %}
+      <div style="padding: 10px 14px; background: var(--azul-suave); border-radius: 10px; font-weight: 600; color: var(--azul-oscuro);">
+        ✓ {{ t }}
+      </div>
+    {% endfor %}
+  </div>
+  <p class="small muted" style="margin-top:12px;">
+    Los tipos disciplinarios (Desempeño, Trato al cliente, etc.) solo los carga el administrador.
+  </p>
+</div>
+
+<div class="card">
+  <h3>3. Plazo para auto-reportar</h3>
+  <p>
+    El empleado tiene <strong>{{ plazo_dias }} días corridos</strong> desde que ocurrió el hecho
+    para cargarlo por sí mismo. Pasado ese plazo, debe solicitárselo a su encargada/admin.
+  </p>
+</div>
+
+<div class="card">
+  <h3>4. Flujo de aprobación</h3>
+  <ol class="lista-simple">
+    <li>El empleado envía el auto-reporte con tipo, fecha y descripción.</li>
+    <li>Queda en estado <span class="aprob aprob-pendiente">⏳ Pendiente aprobación</span>.</li>
+    <li>El empleado puede <strong>cancelarlo</strong> mientras esté pendiente.</li>
+    <li>El admin revisa y lo <span class="aprob aprob-aprobada">✓ Aprueba</span> (pasa a <em>resuelta</em>) o lo <span class="aprob aprob-rechazada">✗ Rechaza</span> (pasa a <em>desestimada</em>), siempre con un comentario.</li>
+    <li>El empleado ve el resultado y el comentario en su listado de incidencias.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h3>5. Impacto en el score mensual</h3>
+  <ul class="lista-simple">
+    <li>Las incidencias <strong>cargadas por admin</strong> (disciplinarias) penalizan el score según el peso configurado.</li>
+    <li>Los <strong>auto-reportes</strong> del empleado <strong>no penalizan el score</strong>, sin importar si quedan aprobados o rechazados. Son registros administrativos.</li>
+    <li>Las incidencias en estado <em>desestimada</em> tampoco suman al cómputo.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>6. Responsabilidades</h3>
+  <ul class="lista-simple">
+    <li><strong>Empleado:</strong> reportar a tiempo y con descripción clara.</li>
+    <li><strong>Encargada:</strong> acompañar al equipo y chequear que los reportes correspondan. No aprueba: eleva a admin si corresponde.</li>
+    <li><strong>Admin:</strong> resolver los pendientes en un plazo razonable para no dejar la incidencia abierta sin respuesta.</li>
+  </ul>
+</div>
+{% endblock %}

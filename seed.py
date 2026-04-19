@@ -124,22 +124,46 @@ def sembrar():
                     VALUES (?,?,?,?)
                 """, (emp["id"], hoy.isoformat(), hora, tickets_h))
 
-    # --- Incidencias variadas ---
-    tipos_inc = ["Tardanza", "Ausencia", "Desempeño", "Trato al cliente"]
-    estados = ["pendiente", "resuelta", "desestimada"]
-    incidencias_mock = [
+    # --- Incidencias cargadas por admin (disciplinarias; penalizan score) ---
+    incidencias_admin = [
         ("136", "Tardanza",        "Llegó 15 minutos tarde",          hoy - timedelta(days=5),  "pendiente"),
         ("136", "Ausencia",        "No asistió sin aviso",            hoy - timedelta(days=12), "resuelta"),
         ("175", "Trato al cliente","Queja de un cliente",             hoy - timedelta(days=3),  "pendiente"),
         ("138", "Desempeño",       "UPT por debajo del objetivo",     hoy - timedelta(days=8),  "resuelta"),
         ("13",  "Tardanza",        "Tardanza de 10 minutos",          hoy - timedelta(days=2),  "desestimada"),
     ]
-    for leg, tipo, desc, f, est in incidencias_mock:
+    for leg, tipo, desc, f, est in incidencias_admin:
         emp = empleados[leg]
         cur.execute("""
-            INSERT INTO incidencias(empleado_id, tipo, descripcion, fecha, estado)
-            VALUES (?,?,?,?,?)
+            INSERT INTO incidencias
+                (empleado_id, tipo, descripcion, fecha, estado,
+                 origen, estado_aprobacion)
+            VALUES (?,?,?,?,?, 'admin', 'no_aplica')
         """, (emp["id"], tipo, desc, f.isoformat(), est))
+
+    # --- Auto-reportes del empleado (no penalizan score) ---
+    # (legajo, tipo, descripción, días_atrás, estado, estado_aprob, coment_admin)
+    autoreportes = [
+        ("125", "Olvido de fichada (salida)",
+         "Olvidé fichar al salir el lunes 21hs.", 1,
+         "pendiente", "pendiente_aprobacion", None),
+        ("201", "Permiso médico",
+         "Turno con cardiólogo, adjunto certificado físico.", 2,
+         "resuelta", "aprobada", "Recibido, OK."),
+        ("138", "Justificación de tardanza",
+         "Corte de luz en el subte.", 1,
+         "desestimada", "rechazada", "Ya se había registrado en planilla."),
+    ]
+    for leg, tipo, desc, dias, est, aprob, coment in autoreportes:
+        emp = empleados[leg]
+        f = hoy - timedelta(days=dias)
+        cur.execute("""
+            INSERT INTO incidencias
+                (empleado_id, tipo, descripcion, fecha, estado,
+                 origen, estado_aprobacion, comentario_admin, fecha_carga)
+            VALUES (?,?,?,?,?, 'empleado', ?, ?, ?)
+        """, (emp["id"], tipo, desc, f.isoformat(), est, aprob, coment,
+              datetime.now().isoformat(timespec="seconds")))
 
     # --- Premios de ejemplo ---
     premios_mock = [

@@ -33,6 +33,18 @@ INSIGNIAS = {
     "vendedora_dia":    ("👗", "Vendedora del día"),
 }
 
+# Auto-reporte: tipos que un empleado puede cargar por sí mismo.
+# Los tipos disciplinarios siguen siendo exclusivos del admin.
+TIPOS_AUTOREPORTE = [
+    "Olvido de fichada (entrada)",
+    "Olvido de fichada (salida)",
+    "Justificación de tardanza",
+    "Permiso médico",
+    "Cambio de turno",
+]
+# Plazo en días para auto-reportar un hecho desde que ocurrió.
+PLAZO_AUTOREPORTE_DIAS = 2
+
 
 # --- Conexión a base de datos ---
 def get_db():
@@ -99,6 +111,10 @@ def init_db():
         fecha DATE NOT NULL,
         estado TEXT NOT NULL DEFAULT 'pendiente',
         comentario_empleado TEXT,
+        origen TEXT NOT NULL DEFAULT 'admin',
+        estado_aprobacion TEXT NOT NULL DEFAULT 'no_aplica',
+        comentario_admin TEXT,
+        fecha_carga TEXT,
         FOREIGN KEY (empleado_id) REFERENCES empleados(id)
     );
 
@@ -142,6 +158,19 @@ def init_db():
     }
     for k, v in defaults.items():
         cur.execute("INSERT OR IGNORE INTO config(clave, valor) VALUES (?, ?)", (k, v))
+
+    # Migraciones suaves: si la tabla 'incidencias' viene de una versión previa
+    # que no tenía las columnas del flujo de auto-reporte, las agregamos.
+    cols = {r[1] for r in cur.execute("PRAGMA table_info(incidencias)").fetchall()}
+    if "origen" not in cols:
+        cur.execute("ALTER TABLE incidencias ADD COLUMN origen TEXT NOT NULL DEFAULT 'admin'")
+    if "estado_aprobacion" not in cols:
+        cur.execute("ALTER TABLE incidencias ADD COLUMN estado_aprobacion TEXT NOT NULL DEFAULT 'no_aplica'")
+    if "comentario_admin" not in cols:
+        cur.execute("ALTER TABLE incidencias ADD COLUMN comentario_admin TEXT")
+    if "fecha_carga" not in cols:
+        cur.execute("ALTER TABLE incidencias ADD COLUMN fecha_carga TEXT")
+
     conn.commit()
     conn.close()
 
@@ -198,8 +227,8 @@ def sucursales_visibles():
 
 @app.context_processor
 def inject_user():
-    """Expone info del usuario logueado a todos los templates."""
-    return {
+    """Expone info del usuario logueado y contador de pendientes a los templates."""
+    ctx = {
         "current_user": {
             "id":        session.get("empleado_id"),
             "legajo":    session.get("legajo"),
@@ -207,8 +236,29 @@ def inject_user():
             "apellido":  session.get("apellido"),
             "rol":       session.get("rol"),
             "sucursal":  session.get("sucursal"),
-        }
+        },
+        "autoreportes_pendientes": 0,
     }
+    # Solo el admin necesita ver el contador (el supervisor es solo lectura).
+    if session.get("rol") == "admin":
+        try:
+            n = get_db().execute(
+                "SELECT COUNT(*) AS n FROM incidencias WHERE estado_aprobacion='pendiente_aprobacion'"
+            ).fetchone()["n"]
+            ctx["autoreportes_pendientes"] = int(n or 0)
+        except Exception:
+            ctx["autoreportes_pendientes"] = 0
+    return ctx
+
+
+@app.route("/politica-incidencias")
+@login_required
+def politica_incidencias():
+    return render_template(
+        "politica_incidencias.html",
+        tipos_autoreporte=TIPOS_AUTOREPORTE,
+        plazo_dias=PLAZO_AUTOREPORTE_DIAS,
+    )
 
 
 # --- Helpers de configuración ---
@@ -250,9 +300,14 @@ def resumen_mensual(empleado_id, mes_inicio=None):
          WHERE empleado_id = ? AND fecha >= ?
     """, (empleado_id, mes_inicio.isoformat())).fetchone()
 
+    # Solo cuentan para el score las incidencias cargadas por admin/supervisión
+    # (disciplinarias). Los auto-reportes del empleado son informativos aunque
+    # queden aprobados, y nunca penalizan.
     incid = db.execute("""
         SELECT COUNT(*) AS n FROM incidencias
          WHERE empleado_id = ? AND fecha >= ?
+           AND origen = 'admin'
+           AND estado <> 'desestimada'
     """, (empleado_id, mes_inicio.isoformat())).fetchone()["n"]
 
     tickets = int(row["tickets"] or 0)
@@ -560,6 +615,88 @@ def incidencias_empleado():
     return render_template("incidencias.html", modo="empleado", lista=lista)
 
 
+@app.route("/empleado/incidencias/nueva", methods=["GET", "POST"])
+@login_required
+def nueva_incidencia_empleado():
+    """Auto-reporte del empleado. Sólo tipos permitidos y con plazo de 48h."""
+    if session.get("rol") != "empleado":
+        flash("Solo los empleados pueden cargar auto-reportes.", "error")
+        return redirect(url_for("dashboard"))
+
+    db = get_db()
+    hoy = date.today()
+    fecha_minima = hoy - timedelta(days=PLAZO_AUTOREPORTE_DIAS)
+
+    if request.method == "POST":
+        tipo = request.form.get("tipo", "")
+        fecha_str = request.form.get("fecha", "")
+        descripcion = request.form.get("descripcion", "").strip()
+
+        if tipo not in TIPOS_AUTOREPORTE:
+            flash("Tipo de incidencia no permitido para auto-reporte.", "error")
+            return redirect(url_for("nueva_incidencia_empleado"))
+
+        try:
+            fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Fecha inválida.", "error")
+            return redirect(url_for("nueva_incidencia_empleado"))
+
+        if fecha > hoy:
+            flash("La fecha no puede ser futura.", "error")
+            return redirect(url_for("nueva_incidencia_empleado"))
+        if fecha < fecha_minima:
+            flash(
+                f"Solo podés auto-reportar hechos de los últimos "
+                f"{PLAZO_AUTOREPORTE_DIAS} días. Pedile a tu encargada que lo cargue.",
+                "error",
+            )
+            return redirect(url_for("nueva_incidencia_empleado"))
+        if not descripcion:
+            flash("La descripción es obligatoria.", "error")
+            return redirect(url_for("nueva_incidencia_empleado"))
+
+        db.execute("""
+            INSERT INTO incidencias
+                (empleado_id, tipo, descripcion, fecha, estado,
+                 origen, estado_aprobacion, fecha_carga)
+            VALUES (?, ?, ?, ?, 'pendiente', 'empleado', 'pendiente_aprobacion', ?)
+        """, (
+            session["empleado_id"], tipo, descripcion, fecha.isoformat(),
+            datetime.now().isoformat(timespec="seconds"),
+        ))
+        db.commit()
+        flash("Incidencia enviada. Queda pendiente de aprobación.", "success")
+        return redirect(url_for("incidencias_empleado"))
+
+    return render_template(
+        "nueva_incidencia.html",
+        tipos=TIPOS_AUTOREPORTE,
+        fecha_min=fecha_minima.isoformat(),
+        fecha_max=hoy.isoformat(),
+        plazo_dias=PLAZO_AUTOREPORTE_DIAS,
+    )
+
+
+@app.route("/empleado/incidencias/<int:inc_id>/cancelar", methods=["POST"])
+@login_required
+def cancelar_autoreporte(inc_id):
+    """El empleado puede cancelar su propio auto-reporte mientras sigue
+    pendiente de aprobación."""
+    db = get_db()
+    row = db.execute(
+        "SELECT * FROM incidencias WHERE id=? AND empleado_id=?",
+        (inc_id, session["empleado_id"]),
+    ).fetchone()
+    if not row or row["origen"] != "empleado" or row["estado_aprobacion"] != "pendiente_aprobacion":
+        flash("No se puede cancelar esta incidencia.", "error")
+    else:
+        db.execute("DELETE FROM incidencias WHERE id=?", (inc_id,))
+        db.commit()
+        flash("Auto-reporte cancelado.", "success")
+    return redirect(url_for("incidencias_empleado"))
+
+
 # --- Dashboard Admin ---
 @app.route("/admin/dashboard")
 @login_required
@@ -816,11 +953,40 @@ def admin_incidencias():
                 db.execute("UPDATE incidencias SET estado=? WHERE id=?", (nuevo, inc_id))
                 db.commit()
                 flash("Estado actualizado.", "success")
-        return redirect(url_for("admin_incidencias"))
+        elif accion in ("aprobar", "rechazar"):
+            inc_id = request.form["inc_id"]
+            comentario = request.form.get("comentario_admin", "").strip()
+            row = db.execute("SELECT * FROM incidencias WHERE id=?", (inc_id,)).fetchone()
+            if not row or row["estado_aprobacion"] != "pendiente_aprobacion":
+                flash("El auto-reporte ya fue resuelto o no existe.", "error")
+            elif accion == "aprobar":
+                db.execute("""
+                    UPDATE incidencias
+                       SET estado_aprobacion='aprobada',
+                           estado='resuelta',
+                           comentario_admin=?
+                     WHERE id=?
+                """, (comentario, inc_id))
+                db.commit()
+                flash("Auto-reporte aprobado.", "success")
+            else:
+                db.execute("""
+                    UPDATE incidencias
+                       SET estado_aprobacion='rechazada',
+                           estado='desestimada',
+                           comentario_admin=?
+                     WHERE id=?
+                """, (comentario, inc_id))
+                db.commit()
+                flash("Auto-reporte rechazado.", "success")
+        return redirect(url_for("admin_incidencias", **{
+            k: v for k, v in request.args.items() if v
+        }))
 
     f_emp = request.args.get("empleado", "")
     f_mes = request.args.get("mes", "")
     f_est = request.args.get("estado", "")
+    f_aprob = request.args.get("aprobacion", "")
     q = """
         SELECT i.*, e.legajo, e.nombre, e.apellido, e.sucursal
           FROM incidencias i
@@ -840,8 +1006,18 @@ def admin_incidencias():
         q += " AND strftime('%Y-%m', i.fecha) = ?"; params.append(f_mes)
     if f_est:
         q += " AND i.estado = ?"; params.append(f_est)
-    q += " ORDER BY i.fecha DESC"
+    if f_aprob == "pendientes":
+        q += " AND i.estado_aprobacion = 'pendiente_aprobacion'"
+    q += " ORDER BY (i.estado_aprobacion='pendiente_aprobacion') DESC, i.fecha DESC"
     lista = db.execute(q, params).fetchall()
+
+    pendientes_count = db.execute(f"""
+        SELECT COUNT(*) AS n
+          FROM incidencias i
+          JOIN empleados e ON e.id = i.empleado_id
+         WHERE i.estado_aprobacion='pendiente_aprobacion'
+           {"AND e.sucursal IN (%s)" % ",".join("?" * len(permitidas)) if permitidas is not None else ""}
+    """, permitidas if permitidas is not None else []).fetchone()["n"]
 
     q_emp = "SELECT legajo, nombre, apellido FROM empleados WHERE rol='empleado'"
     p_emp = []
@@ -853,7 +1029,8 @@ def admin_incidencias():
 
     return render_template(
         "incidencias.html", modo="admin", lista=lista, empleados=empleados,
-        filtros={"empleado": f_emp, "mes": f_mes, "estado": f_est},
+        filtros={"empleado": f_emp, "mes": f_mes, "estado": f_est, "aprobacion": f_aprob},
+        pendientes_count=pendientes_count,
     )
 
 

@@ -15,17 +15,23 @@
     {% if current_user.rol == 'admin' %}
       <a href="{{ url_for('dashboard_admin') }}"    class="{% if ruta == 'dashboard_admin' %}active{% endif %}">Dashboard</a>
       <a href="{{ url_for('cargar_kpis') }}"        class="{% if ruta in ('cargar_kpis','importar_csv','confirmar_csv','guardar_config') %}active{% endif %}">Cargar KPIs</a>
-      <a href="{{ url_for('admin_incidencias') }}"  class="{% if ruta == 'admin_incidencias' %}active{% endif %}">Incidencias</a>
+      <a href="{{ url_for('admin_incidencias') }}"  class="{% if ruta == 'admin_incidencias' %}active{% endif %}">
+        Incidencias
+        {% if autoreportes_pendientes %}<span class="pill-count">{{ autoreportes_pendientes }}</span>{% endif %}
+      </a>
       <a href="{{ url_for('admin_empleados') }}"    class="{% if ruta == 'admin_empleados' %}active{% endif %}">Empleados</a>
       <a href="{{ url_for('admin_premios') }}"      class="{% if ruta == 'admin_premios' %}active{% endif %}">Premios</a>
+      <a href="{{ url_for('politica_incidencias') }}" class="{% if ruta == 'politica_incidencias' %}active{% endif %}">Política</a>
     {% elif current_user.rol == 'supervisor' %}
       <a href="{{ url_for('dashboard_admin') }}"    class="{% if ruta == 'dashboard_admin' %}active{% endif %}">Dashboard</a>
       <a href="{{ url_for('admin_incidencias') }}"  class="{% if ruta == 'admin_incidencias' %}active{% endif %}">Incidencias</a>
       <a href="{{ url_for('admin_empleados') }}"    class="{% if ruta == 'admin_empleados' %}active{% endif %}">Empleados</a>
       <a href="{{ url_for('admin_premios') }}"      class="{% if ruta == 'admin_premios' %}active{% endif %}">Premios</a>
+      <a href="{{ url_for('politica_incidencias') }}" class="{% if ruta == 'politica_incidencias' %}active{% endif %}">Política</a>
     {% else %}
       <a href="{{ url_for('dashboard_empleado') }}"  class="{% if ruta == 'dashboard_empleado' %}active{% endif %}">Mi Panel</a>
       <a href="{{ url_for('incidencias_empleado') }}" class="{% if ruta == 'incidencias_empleado' %}active{% endif %}">Mis Incidencias</a>
+      <a href="{{ url_for('politica_incidencias') }}" class="{% if ruta == 'politica_incidencias' %}active{% endif %}">Política</a>
     {% endif %}
   </nav>
   <div class="user-info">

@@ -622,6 +622,70 @@ a:hover { text-decoration: underline; }
 .chk:hover { border-color: var(--naranja-claro); background: var(--naranja-suave); }
 .chk input { margin: 0; cursor: pointer; accent-color: var(--naranja); }
 
+/* Badge con contador al lado del link de menú (auto-reportes pendientes) */
+.pill-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 2px 7px;
+  margin-left: 6px;
+  background: var(--naranja);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  border-radius: 20px;
+  vertical-align: 1px;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.2);
+}
+
+/* Etiqueta de origen (admin/empleado) en listado de incidencias */
+.origen {
+  display: inline-block;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.origen-empleado { background: var(--azul-suave);   color: var(--azul-oscuro); border: 1px solid var(--azul-claro); }
+.origen-admin    { background: #eceff1;             color: #546e7a;            border: 1px solid #cfd8dc; }
+
+/* Estado de aprobación */
+.aprob {
+  display: inline-block;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.aprob-pendiente { background: var(--naranja-suave); color: var(--naranja-oscuro); border: 1px solid var(--naranja-claro); }
+.aprob-aprobada  { background: #e8f5e9;              color: var(--color-exito);    border: 1px solid #a5d6a7; }
+.aprob-rechazada { background: #ffebee;              color: var(--color-error);    border: 1px solid #ef9a9a; }
+
+/* Botones de accion rápida */
+.btn-ok {
+  background: var(--color-exito);
+  border-color: var(--color-exito);
+  color: #fff;
+}
+.btn-ok:hover { background: #1b5e20; border-color: #1b5e20; }
+.btn-danger {
+  background: var(--color-error);
+  border-color: var(--color-error);
+  color: #fff;
+}
+.btn-danger:hover { background: #8e0000; border-color: #8e0000; }
+
+/* Fila resaltada: auto-reporte pendiente de aprobación */
+.tabla tbody tr.row-pendiente {
+  background: var(--naranja-suave) !important;
+  box-shadow: inset 4px 0 0 var(--naranja);
+}
+.tabla tbody tr.row-pendiente:hover { background: #ffe0b2 !important; }
+
 code {
   background: var(--azul-suave);
   color: var(--azul-oscuro);

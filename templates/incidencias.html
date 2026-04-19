@@ -2,11 +2,36 @@
 {% block title %}Incidencias - KPIs{% endblock %}
 {% block content %}
 
+{% macro origen_badge(i) %}
+  {% if i.origen == 'empleado' %}
+    <span class="origen origen-empleado" title="Auto-reportado por el empleado">👤 Empleado</span>
+  {% else %}
+    <span class="origen origen-admin" title="Cargado por admin/encargada">🏢 Admin</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro aprobacion_badge(i) %}
+  {% if i.estado_aprobacion == 'pendiente_aprobacion' %}
+    <span class="aprob aprob-pendiente">⏳ Pendiente aprobación</span>
+  {% elif i.estado_aprobacion == 'aprobada' %}
+    <span class="aprob aprob-aprobada">✓ Aprobada</span>
+  {% elif i.estado_aprobacion == 'rechazada' %}
+    <span class="aprob aprob-rechazada">✗ Rechazada</span>
+  {% endif %}
+{% endmacro %}
+
 {% if modo == 'admin' %}
   {% set solo_lectura = current_user.rol == 'supervisor' %}
   <section class="hero">
     <h1>Gestión de Incidencias</h1>
-    {% if solo_lectura %}<p class="muted">Vista de supervisor (solo lectura).</p>{% endif %}
+    {% if solo_lectura %}
+      <p class="muted">Vista de supervisor (solo lectura).</p>
+    {% elif pendientes_count %}
+      <p class="muted"><strong class="err">{{ pendientes_count }}</strong> auto-reporte(s) pendiente(s) de aprobación.
+        <a href="{{ url_for('admin_incidencias', aprobacion='pendientes') }}">Ver pendientes</a>
+      </p>
+    {% endif %}
+    <p class="muted small">📋 <a href="{{ url_for('politica_incidencias') }}">Ver política de incidencias</a></p>
   </section>
 
   {% if not solo_lectura %}
@@ -59,6 +84,12 @@
           <option value="desestimada" {% if filtros.estado=='desestimada' %}selected{% endif %}>Desestimada</option>
         </select>
       </label>
+      <label>Aprobación
+        <select name="aprobacion">
+          <option value="">Todas</option>
+          <option value="pendientes" {% if filtros.aprobacion=='pendientes' %}selected{% endif %}>Pendientes de aprobación</option>
+        </select>
+      </label>
       <button class="btn" type="submit">Filtrar</button>
     </form>
   </div>
@@ -67,58 +98,104 @@
     <table class="tabla">
       <thead>
         <tr>
-          <th>Fecha</th><th>Empleado</th><th>Tipo</th><th>Descripción</th>
-          <th>Estado</th><th>Comentario empleado</th>
-          {% if not solo_lectura %}<th>Cambiar</th>{% endif %}
+          <th>Fecha</th><th>Empleado</th><th>Origen</th><th>Tipo</th>
+          <th>Descripción</th><th>Estado</th><th>Aprobación</th>
+          {% if not solo_lectura %}<th>Acciones</th>{% endif %}
         </tr>
       </thead>
       <tbody>
         {% for i in lista %}
-          <tr>
-            <td>{{ i.fecha }}</td>
+          <tr class="{% if i.estado_aprobacion == 'pendiente_aprobacion' %}row-pendiente{% endif %}">
+            <td>
+              {{ i.fecha }}
+              {% if i.fecha_carga %}<div class="small muted">cargada {{ i.fecha_carga[:16] | replace('T',' ') }}</div>{% endif %}
+            </td>
             <td>{{ i.legajo }} - {{ i.nombre }} {{ i.apellido[:1] }}</td>
+            <td>{{ origen_badge(i) }}</td>
             <td>{{ i.tipo }}</td>
-            <td>{{ i.descripcion }}</td>
+            <td>
+              {{ i.descripcion }}
+              {% if i.comentario_empleado %}
+                <div class="small muted">💬 emp.: {{ i.comentario_empleado }}</div>
+              {% endif %}
+              {% if i.comentario_admin %}
+                <div class="small muted">🛡 admin: {{ i.comentario_admin }}</div>
+              {% endif %}
+            </td>
             <td><span class="estado estado-{{ i.estado }}">{{ i.estado }}</span></td>
-            <td>{{ i.comentario_empleado or '' }}</td>
+            <td>{{ aprobacion_badge(i) }}</td>
             {% if not solo_lectura %}
             <td>
-              <form method="post" class="form-inline-small">
-                <input type="hidden" name="accion" value="estado">
-                <input type="hidden" name="inc_id" value="{{ i.id }}">
-                <select name="estado">
-                  <option value="pendiente" {% if i.estado=='pendiente' %}selected{% endif %}>pendiente</option>
-                  <option value="resuelta" {% if i.estado=='resuelta' %}selected{% endif %}>resuelta</option>
-                  <option value="desestimada" {% if i.estado=='desestimada' %}selected{% endif %}>desestimada</option>
-                </select>
-                <button class="btn btn-small" type="submit">OK</button>
-              </form>
+              {% if i.estado_aprobacion == 'pendiente_aprobacion' %}
+                <form method="post" class="form-inline-small">
+                  <input type="hidden" name="accion" value="aprobar">
+                  <input type="hidden" name="inc_id" value="{{ i.id }}">
+                  <input name="comentario_admin" placeholder="Comentario (opcional)">
+                  <button class="btn btn-small btn-ok" type="submit">Aprobar</button>
+                </form>
+                <form method="post" class="form-inline-small">
+                  <input type="hidden" name="accion" value="rechazar">
+                  <input type="hidden" name="inc_id" value="{{ i.id }}">
+                  <input name="comentario_admin" placeholder="Motivo rechazo">
+                  <button class="btn btn-small btn-danger" type="submit">Rechazar</button>
+                </form>
+              {% else %}
+                <form method="post" class="form-inline-small">
+                  <input type="hidden" name="accion" value="estado">
+                  <input type="hidden" name="inc_id" value="{{ i.id }}">
+                  <select name="estado">
+                    <option value="pendiente" {% if i.estado=='pendiente' %}selected{% endif %}>pendiente</option>
+                    <option value="resuelta" {% if i.estado=='resuelta' %}selected{% endif %}>resuelta</option>
+                    <option value="desestimada" {% if i.estado=='desestimada' %}selected{% endif %}>desestimada</option>
+                  </select>
+                  <button class="btn btn-small" type="submit">OK</button>
+                </form>
+              {% endif %}
             </td>
             {% endif %}
           </tr>
         {% else %}
-          <tr><td colspan="{{ 7 if not solo_lectura else 6 }}" class="muted center">Sin incidencias.</td></tr>
+          <tr><td colspan="{{ 8 if not solo_lectura else 7 }}" class="muted center">Sin incidencias.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 
 {% else %}
-  <section class="hero"><h1>Mis incidencias del mes</h1></section>
+  <section class="hero">
+    <h1>Mis incidencias del mes</h1>
+    <p class="muted small">📋 <a href="{{ url_for('politica_incidencias') }}">Política de incidencias</a></p>
+  </section>
+
+  <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+    <div>
+      <strong>¿Te olvidaste de fichar o querés justificar algo?</strong>
+      <div class="small muted">Podés auto-reportar hechos de los últimos 2 días. Queda pendiente hasta que lo apruebe tu encargada.</div>
+    </div>
+    <a class="btn btn-primary" href="{{ url_for('nueva_incidencia_empleado') }}">+ Nueva incidencia</a>
+  </div>
+
   <div class="card">
     <table class="tabla">
       <thead>
-        <tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Estado</th><th>Mi comentario</th></tr>
+        <tr><th>Fecha</th><th>Origen</th><th>Tipo</th><th>Descripción</th><th>Estado</th><th>Aprobación</th><th>Mi comentario</th><th></th></tr>
       </thead>
       <tbody>
         {% for i in lista %}
-          <tr>
+          <tr class="{% if i.estado_aprobacion == 'pendiente_aprobacion' %}row-pendiente{% endif %}">
             <td>{{ i.fecha }}</td>
+            <td>{{ origen_badge(i) }}</td>
             <td>{{ i.tipo }}</td>
-            <td>{{ i.descripcion }}</td>
-            <td><span class="estado estado-{{ i.estado }}">{{ i.estado }}</span></td>
             <td>
-              {% if i.estado == 'pendiente' %}
+              {{ i.descripcion }}
+              {% if i.comentario_admin %}
+                <div class="small muted">🛡 admin: {{ i.comentario_admin }}</div>
+              {% endif %}
+            </td>
+            <td><span class="estado estado-{{ i.estado }}">{{ i.estado }}</span></td>
+            <td>{{ aprobacion_badge(i) }}</td>
+            <td>
+              {% if i.estado == 'pendiente' and i.estado_aprobacion != 'pendiente_aprobacion' %}
                 <form method="post" class="form-inline-small">
                   <input type="hidden" name="inc_id" value="{{ i.id }}">
                   <input name="comentario" value="{{ i.comentario_empleado or '' }}" placeholder="Tu comentario...">
@@ -128,9 +205,16 @@
                 {{ i.comentario_empleado or '-' }}
               {% endif %}
             </td>
+            <td>
+              {% if i.origen == 'empleado' and i.estado_aprobacion == 'pendiente_aprobacion' %}
+                <form method="post" action="{{ url_for('cancelar_autoreporte', inc_id=i.id) }}" onsubmit="return confirm('¿Cancelar este auto-reporte?');">
+                  <button class="btn btn-small btn-danger" type="submit">Cancelar</button>
+                </form>
+              {% endif %}
+            </td>
           </tr>
         {% else %}
-          <tr><td colspan="5" class="muted center">No tenés incidencias este mes.</td></tr>
+          <tr><td colspan="8" class="muted center">No tenés incidencias este mes.</td></tr>
         {% endfor %}
       </tbody>
     </table>

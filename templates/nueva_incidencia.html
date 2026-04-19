@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Nueva incidencia - KPIs{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Auto-reportar una incidencia</h1>
+  <p class="muted">Podés cargar hechos ocurridos en los últimos {{ plazo_dias }} días.
+    <a href="{{ url_for('politica_incidencias') }}">Leer política completa</a></p>
+</section>
+
+<div class="card" style="max-width: 640px;">
+  <h3>Datos del hecho</h3>
+  <form method="post" class="form">
+    <label>Tipo</label>
+    <select name="tipo" required>
+      <option value="">— Seleccioná —</option>
+      {% for t in tipos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+    </select>
+
+    <label>Fecha en que ocurrió</label>
+    <input type="date" name="fecha" required
+           min="{{ fecha_min }}" max="{{ fecha_max }}" value="{{ fecha_max }}">
+    <div class="small muted">Solo fechas entre {{ fecha_min }} y {{ fecha_max }}.</div>
+
+    <label>Descripción</label>
+    <textarea name="descripcion" rows="4" required placeholder="Ej: Olvidé fichar al salir el viernes a las 21:00"></textarea>
+
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <button class="btn btn-primary" type="submit">Enviar auto-reporte</button>
+      <a class="btn" href="{{ url_for('incidencias_empleado') }}">Cancelar</a>
+    </div>
+  </form>
+</div>
+
+<div class="card" style="background: var(--naranja-suave); border-left: 4px solid var(--naranja);">
+  <h3>📌 Recordá</h3>
+  <ul class="lista-simple small">
+    <li>Una vez enviado, queda <strong>pendiente de aprobación</strong>. Podés cancelarlo mientras esté pendiente.</li>
+    <li>Tu encargada va a aprobar o rechazar con un comentario.</li>
+    <li>Los auto-reportes <strong>no penalizan tu score</strong>; son registros administrativos.</li>
+    <li>Si el hecho es de hace más de {{ plazo_dias }} días, pedile a tu encargada que lo cargue ella.</li>
+  </ul>
+</div>
+{% endblock %}
