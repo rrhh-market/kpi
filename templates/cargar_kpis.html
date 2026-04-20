@@ -24,31 +24,50 @@
   </div>
 
   <div class="card">
-    <h3>Carga masiva por CSV</h3>
-    <form method="post" action="{{ url_for('importar_csv') }}" enctype="multipart/form-data" class="form">
-      <label>Archivo CSV (legajo, fecha, tickets_cantidad, prendas_por_ticket, sucursal)</label>
-      <input type="file" name="csv_file" accept=".csv" required>
-      <input type="hidden" name="preview" value="1">
-      <button class="btn btn-primary" type="submit">Previsualizar</button>
+    <h3>Importar desde SQL Server (Dragonfish)</h3>
+    <form method="post" action="{{ url_for('importar_sql') }}" class="form">
+      <label>Fecha desde</label>
+      <input name="fecha_desde" type="date" required>
+      <label>Fecha hasta (opcional, por defecto hoy)</label>
+      <input name="fecha_hasta" type="date">
+      <button class="btn btn-primary" type="submit">Consultar y previsualizar</button>
     </form>
-    <p class="muted small">La fecha debe tener formato YYYY-MM-DD.</p>
+    <p class="muted small">
+      Ejecuta la query unificada contra DRAGONFISH_LURO / DRAGONFISH_PERALTA
+      y cruza por nombre con RRHHLegajos. Requiere <code>SQL_SERVER_CONN_STR</code>
+      configurada en el entorno.
+    </p>
   </div>
 </div>
 
 {% if preview %}
 <div class="card">
-  <h3>Vista previa del CSV</h3>
-  <p>Filas listas para importar: <strong>{{ preview.ok|length }}</strong>
-     · Con errores: <strong>{{ preview.err|length }}</strong></p>
+  <h3>Vista previa de la importación</h3>
+  <p>
+    Rango: <strong>{{ preview.fecha_desde }}</strong> → <strong>{{ preview.fecha_hasta }}</strong>
+    · Filas devueltas por SQL: <strong>{{ preview.total_filas }}</strong>
+    · Días de cajero listos para importar: <strong>{{ preview.ok|length }}</strong>
+    · Filas con errores de matching: <strong>{{ preview.err|length }}</strong>
+  </p>
 
   {% if preview.ok %}
     <table class="tabla">
-      <thead><tr><th>Línea</th><th>Legajo</th><th>Nombre</th><th>Fecha</th><th>Tickets</th><th>UPT</th><th>Prendas total</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Local</th><th>Legajo</th><th>Cajero</th><th>Día</th>
+          <th>Tickets</th><th>Prendas</th><th>UPT</th>
+        </tr>
+      </thead>
       <tbody>
         {% for r in preview.ok %}
           <tr>
-            <td>{{ r.linea }}</td><td>{{ r.legajo }}</td><td>{{ r.nombre }}</td>
-            <td>{{ r.fecha }}</td><td>{{ r.tickets }}</td><td>{{ r.upt }}</td><td>{{ r.prendas_total }}</td>
+            <td>{{ r.local }}</td>
+            <td>{{ r.legajo }}</td>
+            <td>{{ r.nombre_emp }}</td>
+            <td>{{ r.dia }}</td>
+            <td>{{ r.tickets }}</td>
+            <td>{{ r.prendas }}</td>
+            <td>{{ r.upt }}</td>
           </tr>
         {% endfor %}
       </tbody>
@@ -56,22 +75,31 @@
   {% endif %}
 
   {% if preview.err %}
-    <h4>Errores</h4>
+    <h4>Filas sin empleado asociado</h4>
     <table class="tabla">
-      <thead><tr><th>Línea</th><th>Legajo</th><th>Motivo</th></tr></thead>
+      <thead><tr><th>Local</th><th>Cajero</th><th>Nombre (RRHH)</th><th>Motivo</th></tr></thead>
       <tbody>
         {% for r in preview.err %}
-          <tr><td>{{ r.linea }}</td><td>{{ r.legajo }}</td><td class="err">{{ r.error }}</td></tr>
+          <tr>
+            <td>{{ r.local }}</td>
+            <td>{{ r.cajero }}</td>
+            <td>{{ r.nombre }}</td>
+            <td class="err">{{ r.error }}</td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
   {% endif %}
 
   {% if preview.ok %}
-    <form method="post" action="{{ url_for('confirmar_csv') }}">
-      <input type="hidden" name="csv_content" value="{{ preview.csv_content }}">
+    <form method="post" action="{{ url_for('confirmar_sql') }}">
+      <input type="hidden" name="filas_json" value="{{ preview.filas_json }}">
       <button class="btn btn-primary" type="submit">Confirmar importación</button>
     </form>
+    <p class="muted small">
+      La importación reemplaza los KPIs diarios y horarios existentes para cada
+      cajero/día incluido, para evitar duplicados al re-ejecutar la consulta.
+    </p>
   {% endif %}
 </div>
 {% endif %}

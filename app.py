@@ -2,8 +2,7 @@
 App principal - Sistema de KPIs para cajeros
 Flask + SQLite. Todo el cálculo de ranking y score se hace en Python.
 """
-import csv
-import io
+import json
 import os
 import sqlite3
 from collections import defaultdict
@@ -15,6 +14,11 @@ from flask import (
     Flask, flash, g, jsonify, redirect, render_template, request, session, url_for,
 )
 
+try:
+    import pyodbc  # type: ignore
+except ImportError:
+    pyodbc = None
+
 # --- Configuración básica ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "kpis.db")
@@ -23,6 +27,52 @@ app = Flask(__name__)
 app.secret_key = "cambiar-esta-clave-en-produccion-kpis-2026"
 
 SUCURSALES = ["CENTRAL", "LURO", "PERALTA", "TALCA"]
+
+# Cadena de conexión a SQL Server para la importación desde Dragonfish.
+# Ejemplo: "DRIVER={ODBC Driver 17 for SQL Server};SERVER=host;DATABASE=MARKET;UID=user;PWD=pass"
+SQL_SERVER_CONN_STR = os.environ.get("SQL_SERVER_CONN_STR", "")
+
+# Sucursales cubiertas por el UNION de la query Dragonfish.
+SUCURSALES_DRAGONFISH = ["LURO", "PERALTA"]
+
+QUERY_DRAGONFISH = """
+SELECT
+    'LURO' AS Local,
+    ISNULL(CONVERT(VARCHAR, VEN.CLOBS), 'SIN CAJERO') AS Cajero,
+    ISNULL(L.Nombre, '') AS Nombre,
+    CAST(COMP.FFCH AS DATE) AS Dia,
+    DATEPART(HOUR, COMP.HALTAFW) AS Hora,
+    COUNT(DISTINCT COMP.CODIGO) AS Tickets,
+    SUM(ISNULL(DET.FCANT, 0)) AS Prendas
+FROM DRAGONFISH_LURO.[ZooLogic].[COMPROBANTEV] COMP
+LEFT JOIN DRAGONFISH_LURO.[ZooLogic].VEN VEN ON COMP.FVEN = VEN.CLCOD
+LEFT JOIN DRAGONFISH_LURO.[ZooLogic].[COMPROBANTEVDET] DET ON COMP.CODIGO = DET.CODIGO
+LEFT JOIN MARKET.dbo.RRHHLegajos L ON L.CodVenDRAGON = VEN.CLCOD
+WHERE COMP.ANULADO = 0
+  AND COMP.FLETRA <> 'R'
+  AND COMP.FFCH >= ?
+  AND COMP.FFCH <= ?
+GROUP BY CONVERT(VARCHAR, VEN.CLOBS), CAST(COMP.FFCH AS DATE), DATEPART(HOUR, COMP.HALTAFW), ISNULL(L.Nombre, '')
+UNION
+SELECT
+    'PERALTA' AS Local,
+    ISNULL(CONVERT(VARCHAR, VEN.CLOBS), 'SIN CAJERO') AS Cajero,
+    ISNULL(L.Nombre, '') AS Nombre,
+    CAST(COMP.FFCH AS DATE) AS Dia,
+    DATEPART(HOUR, COMP.HALTAFW) AS Hora,
+    COUNT(DISTINCT COMP.CODIGO) AS Tickets,
+    SUM(ISNULL(DET.FCANT, 0)) AS Prendas
+FROM DRAGONFISH_PERALTA.[ZooLogic].[COMPROBANTEV] COMP
+LEFT JOIN DRAGONFISH_PERALTA.[ZooLogic].VEN VEN ON COMP.FVEN = VEN.CLCOD
+LEFT JOIN DRAGONFISH_PERALTA.[ZooLogic].[COMPROBANTEVDET] DET ON COMP.CODIGO = DET.CODIGO
+LEFT JOIN MARKET.dbo.RRHHLegajos L ON L.CodVenDRAGON = VEN.CLCOD
+WHERE COMP.ANULADO = 0
+  AND COMP.FLETRA <> 'R'
+  AND COMP.FFCH >= ?
+  AND COMP.FFCH <= ?
+GROUP BY CONVERT(VARCHAR, VEN.CLOBS), CAST(COMP.FFCH AS DATE), DATEPART(HOUR, COMP.HALTAFW), ISNULL(L.Nombre, '')
+ORDER BY Dia DESC, Hora ASC, Tickets DESC
+"""
 
 # Tipos de insignias disponibles (clave -> (emoji, nombre))
 INSIGNIAS = {
@@ -815,107 +865,240 @@ def guardar_config():
     return redirect(url_for("cargar_kpis"))
 
 
-@app.route("/admin/kpis/csv", methods=["POST"])
+def _norm_nombre(s):
+    """Normaliza un nombre: mayúsculas, sin comas, sin espacios extra."""
+    return " ".join((s or "").upper().replace(",", " ").split())
+
+
+def _variantes_nombre(emp):
+    """Variantes aceptables del nombre de un empleado para matchear con RRHHLegajos.Nombre."""
+    n = emp["nombre"]
+    a = emp["apellido"]
+    return {
+        _norm_nombre(f"{n} {a}"),
+        _norm_nombre(f"{a} {n}"),
+    }
+
+
+def _parse_fecha(s, nombre_campo):
+    """Parsea YYYY-MM-DD o lanza ValueError con mensaje útil."""
+    try:
+        return datetime.strptime((s or "").strip(), "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError(f"{nombre_campo} inválida (formato esperado YYYY-MM-DD).")
+
+
+def consultar_dragonfish(fecha_desde, fecha_hasta):
+    """Ejecuta la query Dragonfish contra SQL Server y devuelve dicts.
+    `fecha_desde` y `fecha_hasta` son `date`; la query se parametriza con ambas."""
+    if pyodbc is None:
+        raise RuntimeError(
+            "pyodbc no está instalado. Agregalo al entorno: pip install pyodbc."
+        )
+    if not SQL_SERVER_CONN_STR:
+        raise RuntimeError(
+            "Falta la variable de entorno SQL_SERVER_CONN_STR con la conexión a SQL Server."
+        )
+
+    desde = fecha_desde.strftime("%Y%m%d")
+    hasta = fecha_hasta.strftime("%Y%m%d")
+    conn = pyodbc.connect(SQL_SERVER_CONN_STR)
+    try:
+        cur = conn.cursor()
+        cur.execute(QUERY_DRAGONFISH, desde, hasta, desde, hasta)
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def _matchear_empleados(rows, db):
+    """Mapea cada fila a un empleado por (sucursal, nombre). Devuelve (filas_ok, filas_err).
+    Cada fila_ok queda con claves: empleado_id, legajo, nombre_emp, local, dia, hora, tickets, prendas.
+    """
+    empleados = db.execute(
+        "SELECT id, legajo, nombre, apellido, sucursal FROM empleados WHERE rol='empleado'"
+    ).fetchall()
+
+    # Índice (sucursal, variante_normalizada) -> empleado
+    idx = {}
+    for e in empleados:
+        for v in _variantes_nombre(e):
+            idx[(e["sucursal"], v)] = e
+
+    ok, err = [], []
+    for r in rows:
+        local = (r.get("Local") or "").strip().upper()
+        nombre_sql = _norm_nombre(r.get("Nombre"))
+        cajero = (r.get("Cajero") or "").strip()
+        dia_raw = r.get("Dia")
+        hora = r.get("Hora")
+        tickets = int(r.get("Tickets") or 0)
+        prendas = float(r.get("Prendas") or 0)
+
+        # Dia puede llegar como date, datetime o string
+        if isinstance(dia_raw, datetime):
+            dia = dia_raw.date()
+        elif isinstance(dia_raw, date):
+            dia = dia_raw
+        else:
+            try:
+                dia = datetime.strptime(str(dia_raw)[:10], "%Y-%m-%d").date()
+            except ValueError:
+                err.append({"cajero": cajero, "nombre": r.get("Nombre"), "local": local,
+                            "error": f"Fecha inválida: {dia_raw}"})
+                continue
+
+        if not nombre_sql:
+            err.append({"cajero": cajero, "nombre": r.get("Nombre"), "local": local,
+                        "error": "Fila sin Nombre en RRHHLegajos (revisar CodVenDRAGON)."})
+            continue
+
+        emp = idx.get((local, nombre_sql))
+        if not emp:
+            err.append({"cajero": cajero, "nombre": r.get("Nombre"), "local": local,
+                        "error": "No se encontró empleado con ese nombre en la sucursal."})
+            continue
+
+        ok.append({
+            "empleado_id": emp["id"],
+            "legajo":      emp["legajo"],
+            "nombre_emp":  f"{emp['nombre']} {emp['apellido']}",
+            "local":       local,
+            "dia":         dia.isoformat(),
+            "hora":        int(hora or 0),
+            "tickets":     tickets,
+            "prendas":     round(prendas, 2),
+            "cajero":      cajero,
+        })
+    return ok, err
+
+
+def _resumen_preview(filas_ok):
+    """Agrega filas por (empleado, dia) para mostrar en el preview."""
+    agg = defaultdict(lambda: {"tickets": 0, "prendas": 0.0})
+    meta = {}
+    for f in filas_ok:
+        key = (f["empleado_id"], f["dia"])
+        agg[key]["tickets"] += f["tickets"]
+        agg[key]["prendas"] += f["prendas"]
+        meta[key] = {"legajo": f["legajo"], "nombre_emp": f["nombre_emp"], "local": f["local"]}
+    out = []
+    for key, v in agg.items():
+        m = meta[key]
+        upt = round(v["prendas"] / v["tickets"], 2) if v["tickets"] else 0
+        out.append({
+            "legajo":     m["legajo"],
+            "nombre_emp": m["nombre_emp"],
+            "local":      m["local"],
+            "dia":        key[1],
+            "tickets":    v["tickets"],
+            "prendas":    round(v["prendas"], 2),
+            "upt":        upt,
+        })
+    out.sort(key=lambda x: (x["dia"], x["local"], x["legajo"]), reverse=True)
+    return out
+
+
+def _aplicar_import(filas_ok, db):
+    """Reemplaza KPIs diarios y horarios para cada (empleado, dia) de la importación."""
+    # Borrar cualquier dato previo para las (empleado, dia) afectadas para evitar duplicados.
+    pares = {(f["empleado_id"], f["dia"]) for f in filas_ok}
+    for emp_id, dia in pares:
+        db.execute("DELETE FROM kpis WHERE empleado_id=? AND fecha=?", (emp_id, dia))
+        db.execute("DELETE FROM kpis_horarios WHERE empleado_id=? AND fecha=?", (emp_id, dia))
+
+    # Insertar filas horarias.
+    for f in filas_ok:
+        db.execute("""
+            INSERT INTO kpis_horarios(empleado_id, fecha, hora, tickets)
+            VALUES (?, ?, ?, ?)
+        """, (f["empleado_id"], f["dia"], f["hora"], f["tickets"]))
+
+    # Insertar agregados diarios desde el resumen.
+    for r in _resumen_preview(filas_ok):
+        emp = db.execute(
+            "SELECT id, sucursal FROM empleados WHERE legajo=?", (r["legajo"],)
+        ).fetchone()
+        if not emp:
+            continue
+        db.execute("""
+            INSERT INTO kpis(empleado_id, fecha, tickets_cantidad, prendas_por_ticket,
+                             horas_trabajadas, prendas_total, sucursal)
+            VALUES (?, ?, ?, ?, 0, ?, ?)
+        """, (emp["id"], r["dia"], r["tickets"], r["upt"], r["prendas"], r["local"] or emp["sucursal"]))
+    db.commit()
+
+    for emp_id, dia in pares:
+        try:
+            dia_obj = datetime.strptime(dia, "%Y-%m-%d").date()
+            evaluar_insignias_dia(emp_id, dia_obj)
+        except ValueError:
+            pass
+    evaluar_insignias_mes()
+
+
+@app.route("/admin/kpis/sql", methods=["POST"])
 @login_required
 @admin_required
-def importar_csv():
-    f = request.files.get("csv_file")
-    if not f:
-        flash("Debe seleccionar un archivo CSV.", "error")
+def importar_sql():
+    """Dispara la consulta a SQL Server y muestra un preview."""
+    try:
+        fecha_desde = _parse_fecha(request.form.get("fecha_desde"), "Fecha desde")
+        fecha_hasta_raw = (request.form.get("fecha_hasta") or "").strip()
+        fecha_hasta = _parse_fecha(fecha_hasta_raw, "Fecha hasta") if fecha_hasta_raw else date.today()
+    except ValueError as e:
+        flash(str(e), "error")
         return redirect(url_for("cargar_kpis"))
 
-    raw = f.read().decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(raw))
-
-    preview = request.form.get("preview") == "1"
-    filas_ok, filas_err = [], []
-    db = get_db()
-    empleados_afectados = set()
-
-    for i, row in enumerate(reader, start=2):  # start=2 por header
-        try:
-            legajo = (row.get("legajo") or "").strip()
-            fecha  = datetime.strptime((row.get("fecha") or "").strip(), "%Y-%m-%d").date()
-            tickets = int(row.get("tickets_cantidad") or 0)
-            upt     = float(row.get("prendas_por_ticket") or 0)
-            sucursal_csv = (row.get("sucursal") or "").strip().upper() or None
-        except (ValueError, TypeError) as e:
-            filas_err.append({"linea": i, "legajo": row.get("legajo"), "error": f"Formato inválido: {e}"})
-            continue
-
-        emp = db.execute("SELECT * FROM empleados WHERE legajo=?", (legajo,)).fetchone()
-        if not emp:
-            filas_err.append({"linea": i, "legajo": legajo, "error": "Legajo inexistente"})
-            continue
-
-        prendas_total = round(tickets * upt, 2)
-        filas_ok.append({
-            "linea": i, "legajo": legajo, "nombre": f"{emp['nombre']} {emp['apellido']}",
-            "fecha": fecha.isoformat(), "tickets": tickets, "upt": upt,
-            "prendas_total": prendas_total,
-        })
-
-        if not preview:
-            db.execute("""
-                INSERT INTO kpis(empleado_id, fecha, tickets_cantidad, prendas_por_ticket,
-                                 horas_trabajadas, prendas_total, sucursal)
-                VALUES (?,?,?,?,?,?,?)
-            """, (emp["id"], fecha.isoformat(), tickets, upt, 0,
-                  prendas_total, sucursal_csv or emp["sucursal"]))
-            empleados_afectados.add((emp["id"], fecha))
-
-    if not preview:
-        db.commit()
-        for emp_id, fecha in empleados_afectados:
-            evaluar_insignias_dia(emp_id, fecha)
-        evaluar_insignias_mes()
-        flash(f"Importación: {len(filas_ok)} filas OK, {len(filas_err)} con errores.", "success")
+    if fecha_hasta < fecha_desde:
+        flash("La fecha hasta no puede ser anterior a la fecha desde.", "error")
         return redirect(url_for("cargar_kpis"))
+
+    try:
+        rows = consultar_dragonfish(fecha_desde, fecha_hasta)
+    except Exception as e:
+        flash(f"Error al consultar SQL Server: {e}", "error")
+        return redirect(url_for("cargar_kpis"))
+
+    filas_ok, filas_err = _matchear_empleados(rows, get_db())
+    resumen = _resumen_preview(filas_ok)
 
     return render_template(
         "cargar_kpis.html",
         pesos=get_pesos(),
-        preview={"ok": filas_ok, "err": filas_err, "csv_content": raw},
+        preview={
+            "ok": resumen,
+            "err": filas_err,
+            "filas_json": json.dumps(filas_ok),
+            "fecha_desde": fecha_desde.isoformat(),
+            "fecha_hasta": fecha_hasta.isoformat(),
+            "total_filas": len(rows),
+        },
     )
 
 
-@app.route("/admin/kpis/csv/confirmar", methods=["POST"])
+@app.route("/admin/kpis/sql/confirmar", methods=["POST"])
 @login_required
 @admin_required
-def confirmar_csv():
-    raw = request.form.get("csv_content", "")
-    reader = csv.DictReader(io.StringIO(raw))
+def confirmar_sql():
+    raw = request.form.get("filas_json", "")
+    try:
+        filas_ok = json.loads(raw) if raw else []
+    except json.JSONDecodeError:
+        flash("Datos de importación corruptos; volvé a previsualizar.", "error")
+        return redirect(url_for("cargar_kpis"))
+
+    if not filas_ok:
+        flash("No hay filas para importar.", "error")
+        return redirect(url_for("cargar_kpis"))
+
     db = get_db()
-    ok, err = 0, 0
-    afectados = set()
-    for i, row in enumerate(reader, start=2):
-        try:
-            legajo = (row.get("legajo") or "").strip()
-            fecha  = datetime.strptime((row.get("fecha") or "").strip(), "%Y-%m-%d").date()
-            tickets = int(row.get("tickets_cantidad") or 0)
-            upt     = float(row.get("prendas_por_ticket") or 0)
-            sucursal_csv = (row.get("sucursal") or "").strip().upper() or None
-        except (ValueError, TypeError):
-            err += 1
-            continue
-        emp = db.execute("SELECT * FROM empleados WHERE legajo=?", (legajo,)).fetchone()
-        if not emp:
-            err += 1
-            continue
-        prendas_total = round(tickets * upt, 2)
-        db.execute("""
-            INSERT INTO kpis(empleado_id, fecha, tickets_cantidad, prendas_por_ticket,
-                             horas_trabajadas, prendas_total, sucursal)
-            VALUES (?,?,?,?,?,?,?)
-        """, (emp["id"], fecha.isoformat(), tickets, upt, 0,
-              prendas_total, sucursal_csv or emp["sucursal"]))
-        afectados.add((emp["id"], fecha))
-        ok += 1
-    db.commit()
-    for emp_id, fecha in afectados:
-        evaluar_insignias_dia(emp_id, fecha)
-    evaluar_insignias_mes()
-    flash(f"Importación confirmada: {ok} filas OK, {err} errores.", "success")
+    _aplicar_import(filas_ok, db)
+
+    pares = {(f["empleado_id"], f["dia"]) for f in filas_ok}
+    flash(f"Importación confirmada: {len(pares)} día(s) de cajero actualizados "
+          f"({len(filas_ok)} filas horarias).", "success")
     return redirect(url_for("cargar_kpis"))
 
 

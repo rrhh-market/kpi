@@ -6,6 +6,8 @@ insignias automáticas, incidencias y premios.
 ## Requisitos
 - Python 3.9+
 - `pip install flask`
+- Para la importación desde SQL Server (Dragonfish): `pip install pyodbc`
+  y el driver ODBC de SQL Server instalado en el sistema.
 
 ## Arranque rápido
 ```bash
@@ -35,11 +37,24 @@ static/main.js      # refresh JS y ordenamiento de tablas
 kpis.db             # SQLite (generada al correr seed.py)
 ```
 
-## Carga masiva por CSV
-Columnas: `legajo, fecha, tickets_cantidad, prendas_por_ticket, sucursal`
-La fecha usa formato `YYYY-MM-DD`. El admin sube el archivo, ve preview y
-confirma la importación; filas con legajos inexistentes o formato inválido se
-reportan sin abortar el resto.
+## Carga masiva desde SQL Server (Dragonfish)
+Desde el panel admin, "Importar desde SQL Server" ejecuta la query unificada
+contra `DRAGONFISH_LURO` y `DRAGONFISH_PERALTA` y cruza con `MARKET.dbo.RRHHLegajos`
+para obtener el `Nombre` de cada cajero. El admin elige `fecha_desde` y
+opcionalmente `fecha_hasta` (por defecto hoy), ve un preview de filas matcheadas
+(agregadas por empleado/día) más las que no tienen empleado asociado, y confirma
+la importación. En cada confirmación, los KPIs diarios y horarios existentes
+para cada (empleado, día) se reemplazan para evitar duplicados.
+
+La aplicación necesita la variable de entorno `SQL_SERVER_CONN_STR` con una
+cadena ODBC válida, por ejemplo:
+```
+SQL_SERVER_CONN_STR="DRIVER={ODBC Driver 17 for SQL Server};SERVER=host;DATABASE=MARKET;UID=usuario;PWD=secreto"
+```
+
+El matcheo a `empleados` se hace por `sucursal` (Local = LURO/PERALTA) + nombre
+completo normalizado (`nombre + apellido` en cualquier orden). Si un cajero no
+matchea se reporta sin abortar el resto.
 
 ## Insignias automáticas
 Se evalúan al cargar KPIs:
