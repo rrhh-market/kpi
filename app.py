@@ -28,42 +28,30 @@ app.secret_key = "cambiar-esta-clave-en-produccion-kpis-2026"
 
 SUCURSALES = ["CENTRAL", "LURO", "PERALTA", "TALCA"]
 
-# Cadena de conexión a SQL Server para la importación desde Dragonfish.
-# Ejemplo: "DRIVER={ODBC Driver 17 for SQL Server};SERVER=host;DATABASE=MARKET;UID=user;PWD=pass"
-SQL_SERVER_CONN_STR = os.environ.get("SQL_SERVER_CONN_STR", "")
+# Conexión a los SQL Server de Dragonfish. Cada local tiene su propio
+# servidor, así que hay una variable de entorno por local. Como fallback
+# se usa SQL_SERVER_CONN_STR (útil si todos comparten host).
+LOCALES_DRAGONFISH = [
+    # (sucursal, nombre de base, env var específica)
+    ("LURO",    "DRAGONFISH_LURO",    "SQL_SERVER_CONN_STR_LURO"),
+    ("PERALTA", "DRAGONFISH_PERALTA", "SQL_SERVER_CONN_STR_PERALTA"),
+]
+SUCURSALES_DRAGONFISH = [l[0] for l in LOCALES_DRAGONFISH]
 
-# Sucursales cubiertas por el UNION de la query Dragonfish.
-SUCURSALES_DRAGONFISH = ["LURO", "PERALTA"]
-
-QUERY_DRAGONFISH = """
+# Query por local. `{db}` se reemplaza por la base de cada Dragonfish.
+# Las fechas se pasan como parámetros (?).
+QUERY_DRAGONFISH_LOCAL = """
 SELECT
-    'LURO' AS Local,
+    ? AS Local,
     ISNULL(CONVERT(VARCHAR, VEN.CLOBS), 'SIN CAJERO') AS Cajero,
     ISNULL(CONVERT(VARCHAR, VEN.CLOBS), '') AS Nombre,
     CAST(COMP.FFCH AS DATE) AS Dia,
     DATEPART(HOUR, COMP.HALTAFW) AS Hora,
     COUNT(DISTINCT COMP.CODIGO) AS Tickets,
     SUM(ISNULL(DET.FCANT, 0)) AS Prendas
-FROM DRAGONFISH_LURO.[ZooLogic].[COMPROBANTEV] COMP
-LEFT JOIN DRAGONFISH_LURO.[ZooLogic].VEN VEN ON COMP.FVEN = VEN.CLCOD
-LEFT JOIN DRAGONFISH_LURO.[ZooLogic].[COMPROBANTEVDET] DET ON COMP.CODIGO = DET.CODIGO
-WHERE COMP.ANULADO = 0
-  AND COMP.FLETRA <> 'R'
-  AND COMP.FFCH >= ?
-  AND COMP.FFCH <= ?
-GROUP BY CONVERT(VARCHAR, VEN.CLOBS), CAST(COMP.FFCH AS DATE), DATEPART(HOUR, COMP.HALTAFW)
-UNION
-SELECT
-    'PERALTA' AS Local,
-    ISNULL(CONVERT(VARCHAR, VEN.CLOBS), 'SIN CAJERO') AS Cajero,
-    ISNULL(CONVERT(VARCHAR, VEN.CLOBS), '') AS Nombre,
-    CAST(COMP.FFCH AS DATE) AS Dia,
-    DATEPART(HOUR, COMP.HALTAFW) AS Hora,
-    COUNT(DISTINCT COMP.CODIGO) AS Tickets,
-    SUM(ISNULL(DET.FCANT, 0)) AS Prendas
-FROM DRAGONFISH_PERALTA.[ZooLogic].[COMPROBANTEV] COMP
-LEFT JOIN DRAGONFISH_PERALTA.[ZooLogic].VEN VEN ON COMP.FVEN = VEN.CLCOD
-LEFT JOIN DRAGONFISH_PERALTA.[ZooLogic].[COMPROBANTEVDET] DET ON COMP.CODIGO = DET.CODIGO
+FROM {db}.[ZooLogic].[COMPROBANTEV] COMP
+LEFT JOIN {db}.[ZooLogic].VEN VEN ON COMP.FVEN = VEN.CLCOD
+LEFT JOIN {db}.[ZooLogic].[COMPROBANTEVDET] DET ON COMP.CODIGO = DET.CODIGO
 WHERE COMP.ANULADO = 0
   AND COMP.FLETRA <> 'R'
   AND COMP.FFCH >= ?
@@ -887,27 +875,53 @@ def _parse_fecha(s, nombre_campo):
 
 
 def consultar_dragonfish(fecha_desde, fecha_hasta):
-    """Ejecuta la query Dragonfish contra SQL Server y devuelve dicts.
-    `fecha_desde` y `fecha_hasta` son `date`; la query se parametriza con ambas."""
+    """Ejecuta la query Dragonfish contra cada SQL Server por local.
+    Devuelve (filas, advertencias). Si un local no tiene conexión
+    configurada o falla, se reporta como advertencia y se siguen los
+    demás; solo se aborta si ninguno pudo consultar."""
     if pyodbc is None:
         raise RuntimeError(
             "pyodbc no está instalado. Agregalo al entorno: pip install pyodbc."
         )
-    if not SQL_SERVER_CONN_STR:
-        raise RuntimeError(
-            "Falta la variable de entorno SQL_SERVER_CONN_STR con la conexión a SQL Server."
-        )
 
     desde = fecha_desde.strftime("%Y%m%d")
     hasta = fecha_hasta.strftime("%Y%m%d")
-    conn = pyodbc.connect(SQL_SERVER_CONN_STR)
-    try:
-        cur = conn.cursor()
-        cur.execute(QUERY_DRAGONFISH, desde, hasta, desde, hasta)
-        cols = [c[0] for c in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
-    finally:
-        conn.close()
+    fallback = os.environ.get("SQL_SERVER_CONN_STR", "")
+
+    rows = []
+    advertencias = []
+    exitosos = 0
+
+    for local, db, env_var in LOCALES_DRAGONFISH:
+        conn_str = os.environ.get(env_var) or fallback
+        if not conn_str:
+            advertencias.append(
+                f"{local}: sin conexión configurada (definir {env_var} o SQL_SERVER_CONN_STR como fallback)."
+            )
+            continue
+        query = QUERY_DRAGONFISH_LOCAL.format(db=db)
+        try:
+            conn = pyodbc.connect(conn_str, timeout=15)
+        except Exception as e:
+            advertencias.append(f"{local}: error de conexión - {e}")
+            continue
+        try:
+            cur = conn.cursor()
+            cur.execute(query, local, desde, hasta)
+            cols = [c[0] for c in cur.description]
+            for row in cur.fetchall():
+                rows.append(dict(zip(cols, row)))
+            exitosos += 1
+        except Exception as e:
+            advertencias.append(f"{local}: error al consultar - {e}")
+        finally:
+            conn.close()
+
+    if exitosos == 0:
+        raise RuntimeError(
+            "Ningún local pudo consultarse. Detalle: " + " | ".join(advertencias)
+        )
+    return rows, advertencias
 
 
 def _matchear_empleados(rows, db):
@@ -1054,10 +1068,13 @@ def importar_sql():
         return redirect(url_for("cargar_kpis"))
 
     try:
-        rows = consultar_dragonfish(fecha_desde, fecha_hasta)
+        rows, advertencias = consultar_dragonfish(fecha_desde, fecha_hasta)
     except Exception as e:
         flash(f"Error al consultar SQL Server: {e}", "error")
         return redirect(url_for("cargar_kpis"))
+
+    for w in advertencias:
+        flash(f"Advertencia: {w}", "error")
 
     filas_ok, filas_err = _matchear_empleados(rows, get_db())
     resumen = _resumen_preview(filas_ok)
